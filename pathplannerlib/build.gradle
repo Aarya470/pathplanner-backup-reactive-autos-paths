@@ -126,7 +126,7 @@ model {
 
             binaries.all {
                 def arch = it.targetPlatform.name
-                if (systemArch == arch && it.buildType.name == 'debug') {
+                if (systemArch == arch && it.buildType.name == 'debug' && !project.hasProperty('skipNativeTests')) {
                     def filePath = it.tasks.install.installDirectory.get().toString() + File.separatorChar + 'lib'
                     test.dependsOn it.tasks.install
                     test.systemProperty 'java.library.path', filePath
