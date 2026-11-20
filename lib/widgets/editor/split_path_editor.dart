@@ -7,6 +7,7 @@ import 'package:pathplanner/path/constraints_zone.dart';
 import 'package:pathplanner/path/event_marker.dart';
 import 'package:pathplanner/path/path_constraints.dart';
 import 'package:pathplanner/path/pathplanner_path.dart';
+import 'package:pathplanner/path/pivot_route.dart';
 import 'package:pathplanner/path/point_towards_zone.dart';
 import 'package:pathplanner/path/rotation_target.dart';
 import 'package:pathplanner/path/waypoint.dart';
@@ -238,57 +239,27 @@ class _SplitPathEditorState extends State<SplitPathEditor>
     return widget.path.obstacleRegions[_viewRegionIndex].blockTimeoutSec != null;
   }
 
-  /// The main path up to the exact end of the region, then the pivot path. The original curve is
-  /// split at the region's end, so the pivot leaves the original path exactly there.
-  PathPlannerPath _pivotRoutePath(ObstacleRegion region) {
-    final PathPlannerPath main = widget.path;
-    final PathPlannerPath divert = region.divertPath!;
-    final int n = main.waypoints.length;
-    final int i = min(region.endPos.floor(), n - 2).clamp(0, n - 2);
-    final double t = (region.endPos - i).clamp(0.0, 1.0).toDouble();
+  /// The main path up to the exact end of the region, then the pivot path
+  PathPlannerPath _pivotRoutePath(ObstacleRegion region) =>
+      PivotRoute.build(widget.path, region);
 
-    final Waypoint a = main.waypoints[i];
-    final Waypoint b = main.waypoints[i + 1];
-    final Translation2d p0 = a.anchor;
-    final Translation2d p1 = a.nextControl ?? a.anchor;
-    final Translation2d p2 = b.prevControl ?? b.anchor;
-    final Translation2d p3 = b.anchor;
-
-    // De Casteljau split of the segment at t. The left half is p0, q1, r1, split.
-    final Translation2d q1 = _lerpT(p0, p1, t);
-    final Translation2d q2 = _lerpT(p1, p2, t);
-    final Translation2d q3 = _lerpT(p2, p3, t);
-    final Translation2d r1 = _lerpT(q1, q2, t);
-    final Translation2d r2 = _lerpT(q2, q3, t);
-    final Translation2d split = _lerpT(r1, r2, t);
-
-    final List<Waypoint> route = PathPlannerPath.cloneWaypoints(main.waypoints.sublist(0, i + 1));
-    route.last.nextControl = q1;
-    final List<Waypoint> pivot = PathPlannerPath.cloneWaypoints(divert.waypoints);
-    if (pivot.isNotEmpty) {
-      pivot.first.anchor = split;
-      pivot.first.prevControl = r1;
-    }
-
-    final PathPlannerPath result = PathPlannerPath.defaultPath(
-      pathDir: main.pathDir,
-      fs: main.fs,
-      name: '${main.name} pivot route',
-    );
-    result.waypoints = [...route, ...pivot];
-    for (final w in result.waypoints) {
-      w.prevControl ??= w.anchor;
-      w.nextControl ??= w.anchor;
-    }
-    result.globalConstraints = main.globalConstraints.clone();
-    result.idealStartingState = main.idealStartingState;
-    result.goalEndState = divert.goalEndState.clone();
-    result.generatePathPoints();
-    return result;
+  /// Number of main path waypoints kept in a pivot route, minus one
+  int _pivotSplitIndex(ObstacleRegion region) {
+    final int n = widget.path.waypoints.length;
+    return min(region.endPos.floor(), n - 2).clamp(0, n - 2);
   }
 
-  Translation2d _lerpT(Translation2d a, Translation2d b, double t) {
-    return Translation2d(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+  /// The pivot route shown in Pivot view, or null when not in Pivot view
+  PathPlannerPath? _shownPivotRoute() {
+    if (_divertTarget != null || _viewMode != 1 || _viewRegionIndex < 0) {
+      return null;
+    }
+    final ObstacleRegion region =
+        widget.path.obstacleRegions[_viewRegionIndex];
+    if (region.divertPath == null || region.divertPath!.waypoints.isEmpty) {
+      return null;
+    }
+    return _pivotRoutePath(region);
   }
 
   /// The region whose timeout applies to the simulated route, or null
@@ -720,6 +691,10 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                           continueRegion: (_divertTarget == null && _viewMode == 2 && _viewRegionIndex >= 0)
                               ? widget.path.obstacleRegions[_viewRegionIndex]
                               : null,
+                          pivotRoute: _shownPivotRoute(),
+                          pivotSplitIndex: (_divertTarget == null && _viewMode == 1 && _viewRegionIndex >= 0)
+                              ? _pivotSplitIndex(widget.path.obstacleRegions[_viewRegionIndex])
+                              : -1,
                           hoveredPointZone: _hoveredPointZone,
                           selectedPointZone: _selectedPointZone,
                           hoveredRotTarget: _hoveredRotTarget,

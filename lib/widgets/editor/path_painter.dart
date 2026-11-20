@@ -38,6 +38,13 @@ class PathPainter extends CustomPainter {
   final ObstacleRegion? highlightRegion;
   final ObstacleRegion? wholePivot;
   final ObstacleRegion? continueRegion;
+
+  /// The full route shown in Pivot view (main path up to the break-off, then the pivot path).
+  /// Its waypoints, rotations, markers and end outline are drawn instead of the main path's.
+  final PathPlannerPath? pivotRoute;
+
+  /// Waypoints up to this index in [pivotRoute] are the main path's own and can be highlighted
+  final int pivotSplitIndex;
   final int? hoveredRotTarget;
   final int? selectedRotTarget;
   final int? hoveredMarker;
@@ -73,6 +80,8 @@ class PathPainter extends CustomPainter {
     this.highlightRegion,
     this.wholePivot,
     this.continueRegion,
+    this.pivotRoute,
+    this.pivotSplitIndex = -1,
     this.hoveredRotTarget,
     this.selectedRotTarget,
     this.hoveredMarker,
@@ -146,6 +155,19 @@ class PathPainter extends CustomPainter {
         }
       } else if (wholePivot != null && wholePivot!.divertPath != null) {
         _paintPivotRoute(paths[i], wholePivot!, canvas, scale);
+        final PathPlannerPath? route = pivotRoute;
+        if (route != null && route.waypoints.isNotEmpty) {
+          if (robotConfig.holonomic) {
+            _paintRotations(route, canvas, scale);
+          }
+          _paintMarkers(route, canvas);
+          for (int w = 0; w < route.waypoints.length; w++) {
+            _paintWaypoint(route, canvas, scale, w,
+                highlight: w <= pivotSplitIndex);
+          }
+          _paintPointZonePositions(route, canvas, scale);
+          continue;
+        }
       } else {
         _paintPathPoints(
             paths[i],
@@ -898,7 +920,10 @@ class PathPainter extends CustomPainter {
   }
 
   void _paintWaypoint(
-      PathPlannerPath path, Canvas canvas, double scale, int waypointIdx) {
+      PathPlannerPath path, Canvas canvas, double scale, int waypointIdx,
+      {bool highlight = true}) {
+    final int? selectedWaypoint = highlight ? this.selectedWaypoint : null;
+    final int? hoveredWaypoint = highlight ? this.hoveredWaypoint : null;
     var paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;

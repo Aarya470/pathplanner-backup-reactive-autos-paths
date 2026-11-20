@@ -9,6 +9,7 @@ import 'package:pathplanner/util/wpimath/geometry.dart';
 import 'package:pathplanner/widgets/field_image.dart';
 import 'package:pathplanner/util/path_painter_util.dart';
 import 'package:pathplanner/widgets/number_text_field.dart';
+import 'package:pathplanner/services/safe_file_writer.dart';
 
 class NavGridPage extends StatefulWidget {
   final Directory deployDirectory;
@@ -266,9 +267,9 @@ class _NavGridPageState extends State<NavGridPage> {
   }
 
   void _saveNavGrid() {
-    widget.fs
-        .file(join(widget.deployDirectory.path, 'navgrid.json'))
-        .writeAsString(jsonEncode(_grid));
+    SafeFileWriter.write(
+        widget.fs.file(join(widget.deployDirectory.path, 'navgrid.json')),
+        jsonEncode(_grid));
   }
 }
 

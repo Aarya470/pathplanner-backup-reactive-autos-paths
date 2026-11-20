@@ -30,6 +30,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 LicenseFile=LICENSE
 PrivilegesRequired=lowest
+CloseApplications=force
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=build\windows\x64\installer
 OutputBaseFilename=pathplanner-backup-reactive-autos-paths-setup
@@ -56,3 +57,4 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
