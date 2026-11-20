@@ -47,4 +47,5 @@ jobs:
         working-directory: ./pathplannerlib
         run: |
           chmod +x gradlew
-          ./gradlew test -PreleaseMode
+          # Java tests only. The C++ test program isn't needed for this Java library.
+          ./gradlew test -x installPathplannerLibTestLinuxx86-64DebugGoogleTestExe -PreleaseMode

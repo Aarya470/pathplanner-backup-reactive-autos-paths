@@ -1,6 +1,6 @@
 #define MyAppName "PathPlanner Backup Paths"
 #define MyAppFolderName "PathPlannerBackupPaths"
-#define MyAppPublisher "Aarya470 (FRC 1089)"
+#define MyAppPublisher "Aaryan Roy (FRC Team 1089)"
 #define MyAppURL "https://github.com/Aarya470/pathplanner-backup-reactive-autos-paths/"
 #define MyAppExeName "pathplanner.exe"
 #define AppVersionName GetStringFileInfo('build\windows\x64\runner\Release\pathplanner.exe', 'ProductVersion')
@@ -14,6 +14,9 @@ AppName={#MyAppName}
 AppVersion={#ApplicationVersion}
 AppVerName={#MyAppName} {#AppVersionName}
 VersionInfoVersion={#ApplicationVersion}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoCopyright=Copyright (c) 2026 Aaryan Roy, FRC Team 1089. Based on PathPlanner (c) 2022 Michael Jansen.
+AppCopyright=Copyright (c) 2026 Aaryan Roy, FRC Team 1089
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -28,7 +31,7 @@ ArchitecturesAllowed=x64compatible
 ; the 64-bit view of the registry.
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
-LicenseFile=LICENSE
+LicenseFile=TERMS.txt
 PrivilegesRequired=lowest
 CloseApplications=force
 PrivilegesRequiredOverridesAllowed=dialog
@@ -38,9 +41,14 @@ SetupIconFile=windows\icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+DisableWelcomePage=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+WelcomeLabel2=This will install [name/ver] on your computer.%n%nMade by Aaryan Roy on FRC Team 1089 (Mercury).%n%nOn the next page, please read and accept the terms of use.%n%nIt is recommended that you close all other applications before continuing.
+LicenseLabel3=Please read the following terms of use. You must accept them before continuing with the installation.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

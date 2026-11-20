@@ -1,0 +1,48 @@
+PATHPLANNER BACKUP PATHS - TERMS OF USE
+
+Made by Aaryan Roy on FRC Team 1089 (Mercury).
+
+Please read these terms. You must accept them to install and use PathPlanner Backup Paths.
+
+1. What this is
+PathPlanner Backup Paths is a free, unofficial version of PathPlanner for the FIRST Robotics Competition. It adds backup paths: regions on a path that react to robots and game pieces during autonomous. It is based on PathPlanner by Michael Jansen and contributors. It is not made by, endorsed by, or supported by the PathPlanner project, FIRST, or any FRC sponsor.
+
+2. Use at your own risk
+This software plans paths that make a real robot move by itself. You are responsible for how your robot behaves. Test new or changed paths and backup paths at low speed, in a safe space, with someone ready to disable the robot. Follow your team's safety rules, the FRC game manual, and event rules. The author and FRC Team 1089 are not responsible for any damage, injury, penalty or lost match that comes from using this software.
+
+3. No warranty
+The software is provided "as is", without warranty of any kind. It may have bugs. Detection and backup path behavior depends on your camera, model, robot code and setup, and may not work the same on your robot.
+
+4. Updates and internet use
+The app checks GitHub for new versions when it starts, and can download and install updates when you ask it to. The robot library is downloaded from GitHub Pages through WPILib. No personal data is collected or sent.
+
+5. Sharing and changing it
+You may use, copy, change and share this software under the MIT License below, which also covers the original PathPlanner. Keep this notice and the license with any copy you share.
+
+6. Changes to these terms
+These terms may be updated in a future version. If you install or update to that version, the terms shown during setup apply.
+
+---------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2022 Michael Jansen
+Copyright (c) 2026 Aaryan Roy (PathPlanner Backup Paths changes)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

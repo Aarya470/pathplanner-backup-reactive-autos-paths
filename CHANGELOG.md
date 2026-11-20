@@ -2,6 +2,10 @@
 
 Each version's notes show in the app under **What's new**, and on its GitHub release.
 
+## 1.0.3
+
+- New: the Windows installer shows who made it (Aaryan Roy, FRC Team 1089) and asks you to accept the terms of use before installing. The terms are also included in the Mac, Linux and portable downloads as TERMS.txt.
+
 ## 1.0.2
 
 - Fixed: saving could fail with a "FileSystemException" error, mostly while dragging a path or editing a backup path. Saves now wait their turn and retry.
