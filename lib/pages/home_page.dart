@@ -12,6 +12,7 @@ import 'package:pathplanner/pages/nav_grid_page.dart';
 import 'package:pathplanner/pages/project/project_page.dart';
 import 'package:pathplanner/pages/telemetry_page.dart';
 import 'package:pathplanner/pages/welcome_page.dart';
+import 'package:pathplanner/services/changelog.dart';
 import 'package:pathplanner/services/log.dart';
 import 'package:pathplanner/services/pplib_telemetry.dart';
 import 'package:pathplanner/services/update_checker.dart';
@@ -19,8 +20,10 @@ import 'package:pathplanner/util/prefs.dart';
 import 'package:pathplanner/widgets/custom_appbar.dart';
 import 'package:pathplanner/widgets/field_image.dart';
 import 'package:pathplanner/widgets/dialogs/settings_dialog.dart';
+import 'package:pathplanner/widgets/dialogs/whats_new_dialog.dart';
 import 'package:pathplanner/widgets/pplib_update_card.dart';
 import 'package:pathplanner/widgets/update_card.dart';
+import 'package:pathplanner/services/safe_file_writer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:undo/undo.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -190,9 +193,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     String fileContent =
                         await DefaultAssetBundle.of(this.context)
                             .loadString('resources/default_navgrid.json');
-                    fs
-                        .file(join(_pathplannerDir.path, 'navgrid.json'))
-                        .writeAsString(fileContent);
+                    SafeFileWriter.write(
+                        fs.file(join(_pathplannerDir.path, 'navgrid.json')),
+                        fileContent);
                   },
                   child: const Text('Yes (Recommended)'),
                 ),
@@ -200,8 +203,33 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             );
           },
         );
+      } else {
+        _maybeShowWhatsNew();
       }
     });
+  }
+
+  /// Show the release notes once after the app is installed or updated.
+  Future<void> _maybeShowWhatsNew() async {
+    final String current = widget.appVersion;
+    if (current.startsWith('0.0.0')) return; // Dev build
+    final String? lastSeen = widget.prefs.getString(PrefsKeys.lastSeenVersion);
+    if (lastSeen == current) return;
+    await widget.prefs.setString(PrefsKeys.lastSeenVersion, current);
+    await _showWhatsNew();
+  }
+
+  Future<void> _showWhatsNew() async {
+    final String changelog =
+        await Changelog.load(DefaultAssetBundle.of(this.context));
+    if (!mounted) return;
+    showDialog(
+      context: this.context,
+      builder: (context) => WhatsNewDialog(
+        version: widget.appVersion,
+        notes: Changelog.notesFor(changelog, widget.appVersion),
+      ),
+    );
   }
 
   @override
@@ -272,10 +300,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 'v${widget.appVersion}',
                 style: TextStyle(color: colorScheme.onSurface),
               ),
-              IconButton(
-                icon: const Icon(Icons.open_in_new_rounded, size: 20),
-                tooltip: 'Open Project',
-                onPressed: () => _openProjectDialog(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.new_releases_outlined, size: 20),
+                    tooltip: "What's new",
+                    onPressed: () {
+                      Navigator.pop(this.context);
+                      _showWhatsNew();
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.open_in_new_rounded, size: 20),
+                    tooltip: 'Open Project',
+                    onPressed: () => _openProjectDialog(),
+                  ),
+                ],
               ),
             ],
           ),
@@ -669,10 +710,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               Defaults.robotFeatures,
     };
 
-    settingsFile.writeAsString(encoder.convert(settings)).then((_) {
-      Log.debug('Wrote project settings to file');
-    }).catchError((err) {
-      Log.error('Error writing project settings', err);
+    SafeFileWriter.write(settingsFile, encoder.convert(settings)).then((ok) {
+      if (ok) Log.debug('Wrote project settings to file');
     });
   }
 
@@ -723,9 +762,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         // Load default grid
         String fileContent = await DefaultAssetBundle.of(this.context)
             .loadString('resources/default_navgrid.json');
-        fs
-            .file(join(_pathplannerDir.path, 'navgrid.json'))
-            .writeAsString(fileContent);
+        SafeFileWriter.write(
+            fs.file(join(_pathplannerDir.path, 'navgrid.json')), fileContent);
       }
     });
 

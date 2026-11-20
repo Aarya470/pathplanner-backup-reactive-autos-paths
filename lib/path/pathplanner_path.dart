@@ -23,6 +23,7 @@ import 'package:pathplanner/services/log.dart';
 import 'package:pathplanner/util/geometry_util.dart';
 import 'package:pathplanner/util/wpimath/geometry.dart';
 import 'package:pathplanner/util/wpimath/math_util.dart';
+import 'package:pathplanner/services/safe_file_writer.dart';
 
 const double targetIncrement = 0.05;
 const double targetSpacing = 0.2;
@@ -155,8 +156,7 @@ class PathPlannerPath {
           ],
           obstacleRegions: [
             for (final regionJson in json['obstacleRegions'] ?? [])
-              ObstacleRegion.fromJson(regionJson,
-                  pathsDir: pathsDir, fs: fs),
+              ObstacleRegion.fromJson(regionJson, pathsDir: pathsDir, fs: fs),
           ],
           rotationTargets: [
             for (final targetJson in json['rotationTargets'] ?? [])
@@ -184,7 +184,7 @@ class PathPlannerPath {
     try {
       File pathFile = fs.file(join(pathDir, '$name.path'));
       const JsonEncoder encoder = JsonEncoder.withIndent('  ');
-      pathFile.writeAsString(encoder.convert(this));
+      SafeFileWriter.write(pathFile, encoder.convert(this));
       lastModified = DateTime.now().toUtc();
     } catch (ex, stack) {
       Log.error('Failed to save path: $name', ex, stack);
@@ -762,7 +762,8 @@ class PathPlannerPath {
     ];
   }
 
-  static List<ObstacleRegion> cloneObstacleRegions(List<ObstacleRegion> regions) {
+  static List<ObstacleRegion> cloneObstacleRegions(
+      List<ObstacleRegion> regions) {
     return [
       for (final region in regions) region.clone(),
     ];

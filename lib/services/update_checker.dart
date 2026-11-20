@@ -16,8 +16,9 @@ class UpdateChecker {
 
   Future<bool> isGuiUpdateAvailable(String currentVersion) async {
     try {
-      Release latestRelease = await _github.repositories
-          .getLatestRelease(RepositorySlug('Aarya470', 'pathplanner-backup-reactive-autos-paths'));
+      Release latestRelease = await _github.repositories.getLatestRelease(
+          RepositorySlug(
+              'Aarya470', 'pathplanner-backup-reactive-autos-paths'));
       String latestVersion = latestRelease.tagName!.substring(1);
 
       Log.verbose(
@@ -37,10 +38,27 @@ class UpdateChecker {
     }
   }
 
+  /// Download link for the Windows installer in the latest release, or null if there isn't one.
+  Future<String?> getWindowsInstallerUrl() async {
+    try {
+      Release latestRelease = await _github.repositories.getLatestRelease(
+          RepositorySlug(
+              'Aarya470', 'pathplanner-backup-reactive-autos-paths'));
+      for (ReleaseAsset asset in latestRelease.assets ?? []) {
+        if ((asset.name ?? '').endsWith('-Windows-setup.exe')) {
+          return asset.browserDownloadUrl;
+        }
+      }
+    } catch (e) {
+      Log.error('Could not find the update installer', e);
+    }
+    return null;
+  }
+
   Future<bool> isPPLibUpdateAvailable(
       {required Directory projectDir, required FileSystem fs}) async {
-    File vendorDepFile =
-        fs.file(join(projectDir.path, 'vendordeps', 'PathplannerLib-BackupPaths.json'));
+    File vendorDepFile = fs.file(
+        join(projectDir.path, 'vendordeps', 'PathplannerLib-BackupPaths.json'));
 
     if (await vendorDepFile.exists()) {
       String fileContent = await vendorDepFile.readAsString();

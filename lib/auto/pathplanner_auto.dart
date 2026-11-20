@@ -8,6 +8,7 @@ import 'package:pathplanner/commands/command_groups.dart';
 import 'package:pathplanner/commands/path_command.dart';
 import 'package:pathplanner/pages/project/project_page.dart';
 import 'package:pathplanner/services/log.dart';
+import 'package:pathplanner/services/safe_file_writer.dart';
 
 const String fileVersion = '2025.0';
 
@@ -133,7 +134,7 @@ class PathPlannerAuto {
     try {
       File autoFile = fs.file(join(autoDir, '$name.auto'));
       const JsonEncoder encoder = JsonEncoder.withIndent('  ');
-      autoFile.writeAsString(encoder.convert(this));
+      SafeFileWriter.write(autoFile, encoder.convert(this));
       lastModified = DateTime.now().toUtc();
       Log.debug('Saved "$name.auto"');
     } catch (ex, stack) {
