@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   FLUTTER_VERSION: 3.35.7
   APP_NAME: PathPlannerBackupPaths
@@ -24,6 +28,8 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
+      - uses: actions/checkout@v6
+
       - id: v
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -32,6 +38,10 @@ jobs:
             V="${GITHUB_REF_NAME#v}"
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          if ! grep -qx "## $V" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $V' section. Add the release notes for $V first."
+            exit 1
+          fi
 
   app:
     needs: version
@@ -170,6 +180,13 @@ jobs:
           }
           JSON
           python3 -m json.tool site/PathplannerLib-BackupPaths.json > /dev/null
+          cat > site/index.html <<HTML
+          <!DOCTYPE html>
+          <html><head><meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=https://github.com/${GITHUB_REPOSITORY}/releases/latest">
+          <title>PathPlanner Backup Paths</title></head>
+          <body><a href="https://github.com/${GITHUB_REPOSITORY}/releases/latest">Download PathPlanner Backup Paths</a></body></html>
+          HTML
           cp site/PathplannerLib-BackupPaths.json .
 
       - name: Zip example robot project
@@ -212,28 +229,45 @@ jobs:
           publish_dir: artifacts/site
           keep_files: true
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ env.VERSION }}
-          name: PathPlanner Backup Paths v${{ env.VERSION }}
-          generate_release_notes: true
-          body: |
-            **Editor:** download the file for your laptop below.
-            - Windows: `-Windows-setup.exe` (installer) or `-Windows-portable.zip`
-            - macOS: `-macOS.zip`. The app is unsigned, so the first time, right-click it and choose **Open**.
-            - Linux: `-Linux.tar.gz`, then run `./pathplanner` from the extracted folder.
+      - uses: actions/checkout@v6
 
-            **Robot library (Java):** in WPILib VS Code, run **WPILib: Manage Vendor Libraries → Install new libraries (online)** and paste:
-            ```
-            ${{ env.SITE_URL }}/PathplannerLib-BackupPaths.json
-            ```
-            Remove `PathplannerLib.json` from your `vendordeps` folder first. This library replaces it and keeps the same `com.pathplanner.lib` classes.
+      - name: Write release notes
+        run: |
+          python3 - <<'PY2'
+          import os
+          v = os.environ["VERSION"]
+          site = os.environ["SITE_URL"]
+          notes, inside = [], False
+          for line in open("CHANGELOG.md", encoding="utf-8").read().splitlines():
+              if line.startswith("## "):
+                  if inside:
+                      break
+                  inside = line[3:].strip() == v
+                  continue
+              if inside:
+                  notes.append(line)
+          body = "## What's new\n\n" + "\n".join(notes).strip() + "\n\n"
+          body += "## Download\n\n"
+          body += "- **Windows:** `-Windows-setup.exe` (installer, updates itself from inside the app) or `-Windows-portable.zip`\n"
+          body += "- **macOS:** `-macOS.zip`. The app is unsigned, so the first time, right-click it and choose **Open**.\n"
+          body += "- **Linux:** `-Linux.tar.gz`, then run `./pathplanner` from the extracted folder.\n\n"
+          body += "## Robot library (Java)\n\n"
+          body += "In WPILib VS Code, run **WPILib: Manage Vendor Libraries > Install new libraries (online)** and paste:\n\n"
+          body += "```\n" + site + "/PathplannerLib-BackupPaths.json\n```\n\n"
+          body += "Remove `PathplannerLib.json` from your `vendordeps` folder first. To update later, use **Check for updates (online)**.\n\n"
+          body += "**Example robot project:** `-ExampleRobot.zip` shows how to connect a PhotonVision detection camera to the regions.\n"
+          open("release-notes.md", "w", encoding="utf-8").write(body)
+          PY2
 
-            **Example robot project:** `-ExampleRobot.zip` shows how to connect a PhotonVision detection camera to the regions. Copy the `sensors` folder, `BackupPathOptions.java`, `detection-camera.json` and `configureDetection()` into your robot code.
-          files: |
-            artifacts/app-windows/*
-            artifacts/app-macos/*
-            artifacts/app-linux/*
-            artifacts/vendordep/*
-            artifacts/example/*
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(artifacts/app-windows/* artifacts/app-macos/* artifacts/app-linux/* artifacts/vendordep/* artifacts/example/*)
+          if gh release view "v${VERSION}" > /dev/null 2>&1; then
+            gh release edit "v${VERSION}" --title "PathPlanner Backup Paths v${VERSION}" --notes-file release-notes.md
+            gh release upload "v${VERSION}" "${files[@]}" --clobber
+          else
+            gh release create "v${VERSION}" "${files[@]}" --title "PathPlanner Backup Paths v${VERSION}" --notes-file release-notes.md --target "${GITHUB_SHA}"
+          fi

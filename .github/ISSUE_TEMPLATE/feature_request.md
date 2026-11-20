@@ -1,17 +1,16 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
+about: Suggest an idea for PathPlanner Backup Paths
 title: ''
 labels: enhancement
 assignees: ''
 
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+**What problem would this solve?**
+For example: "In auto, when [...], our robot [...]"
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+**What would you like it to do?**
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+**Anything else?**
+Screenshots, path files or videos are welcome.

@@ -1,34 +1,29 @@
 ---
 name: Bug report
-about: Something isn't working right. Please don't open issues for general robot code
-  support.
+about: Something in PathPlanner Backup Paths isn't working right.
 title: ''
 labels: bug
 assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**What happened?**
+A clear description of the bug. If an error popup appeared, copy all of its text, starting from the first line.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Steps to reproduce**
+1. Open '...'
+2. Click on '...'
+3. See the error
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+**What did you expect to happen?**
 
 **Screenshots**
-If applicable, add screenshots to help explain your problem.
+If they help, add screenshots.
 
-**Versions: (please complete the following information):**
+**Versions**
  - OS: [e.g. Windows 11]
- - GUI Version: [e.g. 2024.1.1]
- - PPLib Version: [e.g. 2024.1.1]
- - PPLib Language: [e.g. Java]
+ - PathPlanner Backup Paths version (shown in the side menu): [e.g. 1.0.1]
+ - PathplannerLib-BackupPaths version (in `vendordeps/PathplannerLib-BackupPaths.json`): [e.g. 1.0.1]
+ - Is it about a backup path / game piece region, or a normal PathPlanner feature?
 
-**Additional context**
-Add any other context about the problem here.
+**Anything else?**
