@@ -2,7 +2,7 @@
 
 A fork of [PathPlanner](https://github.com/mjansen4857/pathplanner) for FRC that adds **backup paths**: regions on a path that watch for robots or game pieces and change what your robot does in autonomous, on the fly.
 
-Made by FRC Team 1089 (Mercury). This is not an official PathPlanner release and is not affiliated with the PathPlanner project.
+Made by Aaryan Roy on FRC Team 1089. This is not an official PathPlanner release and is not affiliated with the PathPlanner project.
 
 ## What it adds
 
