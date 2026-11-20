@@ -1,0 +1,239 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        description: Version to release, for example 1.0.1
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.35.7
+  APP_NAME: PathPlannerBackupPaths
+  SITE_URL: https://aarya470.github.io/pathplanner-backup-reactive-autos-paths
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+  app:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows
+          - os: macos-15
+            platform: macos
+          - os: ubuntu-22.04
+            platform: linux
+    name: App - ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux build deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Set app version
+        run: dart run cider version "${VERSION}+${{ github.run_number }}"
+
+      - name: Build app
+        run: flutter build ${{ matrix.platform }} --release
+
+      - name: Package Windows
+        if: matrix.platform == 'windows'
+        run: |
+          cp windows/redist/msvcp140.dll windows/redist/vcruntime140.dll windows/redist/vcruntime140_1.dll build/windows/x64/runner/Release/
+          mkdir -p dist
+          cd build/windows/x64/runner/Release
+          7z a "$GITHUB_WORKSPACE/dist/${APP_NAME}-v${VERSION}-Windows-portable.zip" .
+
+      - name: Build Windows installer
+        if: matrix.platform == 'windows'
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: windows_installer.iss
+          options: /O+ /F"${{ env.APP_NAME }}-v${{ env.VERSION }}-Windows-setup"
+
+      - name: Collect Windows installer
+        if: matrix.platform == 'windows'
+        run: cp build/windows/x64/installer/*.exe dist/
+
+      - name: Package macOS
+        if: matrix.platform == 'macos'
+        run: |
+          mkdir -p dist
+          cd build/macos/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "$GITHUB_WORKSPACE/dist/${APP_NAME}-v${VERSION}-macOS.zip"
+
+      - name: Package Linux
+        if: matrix.platform == 'linux'
+        run: |
+          mkdir -p dist
+          tar -czf "dist/${APP_NAME}-v${VERSION}-Linux.tar.gz" -C build/linux/x64/release/bundle .
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: app-${{ matrix.platform }}
+          path: dist/*
+
+  lib:
+    needs: version
+    name: Robot library (vendordep)
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
+      - name: Set library version
+        working-directory: ./pathplannerlib
+        run: sed -i "s/def pubVersion = '0.0.0'/def pubVersion = '${VERSION}'/" publish.gradle
+
+      - name: Build and publish to local Maven folder
+        working-directory: ./pathplannerlib
+        run: |
+          chmod +x gradlew
+          ./gradlew publishJavaPublicationToMavenRepository -PreleaseMode
+
+      - name: Make vendordep site
+        run: |
+          mkdir -p site/repo
+          cp -r pathplannerlib/build/repos/releases/. site/repo/
+          cat > site/PathplannerLib-BackupPaths.json <<JSON
+          {
+              "fileName": "PathplannerLib-BackupPaths.json",
+              "name": "PathplannerLib-BackupPaths",
+              "version": "${VERSION}",
+              "uuid": "3d6a28a7-468a-4c75-afd7-ccf2a78e3135",
+              "frcYear": "2026",
+              "mavenUrls": [
+                  "${SITE_URL}/repo"
+              ],
+              "jsonUrl": "${SITE_URL}/PathplannerLib-BackupPaths.json",
+              "conflictsWith": [
+                  {
+                      "uuid": "1b42324f-17c6-4875-8e77-1c312bc8c786",
+                      "errorMessage": "PathplannerLib-BackupPaths replaces PathplannerLib. Remove PathplannerLib from vendordeps first.",
+                      "offlineFileName": "PathplannerLib.json"
+                  }
+              ],
+              "javaDependencies": [
+                  {
+                      "groupId": "io.github.aarya470",
+                      "artifactId": "PathplannerLibBackupPaths-java",
+                      "version": "${VERSION}"
+                  }
+              ],
+              "jniDependencies": [],
+              "cppDependencies": []
+          }
+          JSON
+          python3 -m json.tool site/PathplannerLib-BackupPaths.json > /dev/null
+          cp site/PathplannerLib-BackupPaths.json .
+
+      - name: Zip example robot project
+        run: |
+          sed -i "s/\"version\": \"1.0.0\"/\"version\": \"${VERSION}\"/g" examples/backup-paths-java/vendordeps/PathplannerLib-BackupPaths.json
+          mkdir -p example
+          cd examples
+          zip -qr "../example/PathPlannerBackupPaths-v${VERSION}-ExampleRobot.zip" backup-paths-java -x "*/build/*" "*/.gradle/*"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: example
+          path: example/*
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: site
+          path: site
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: vendordep
+          path: PathplannerLib-BackupPaths.json
+
+  publish:
+    needs: [version, app, lib]
+    name: Publish release
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: Publish vendordep to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: artifacts/site
+          keep_files: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: PathPlanner Backup Paths v${{ env.VERSION }}
+          generate_release_notes: true
+          body: |
+            **Editor:** download the file for your laptop below.
+            - Windows: `-Windows-setup.exe` (installer) or `-Windows-portable.zip`
+            - macOS: `-macOS.zip`. The app is unsigned, so the first time, right-click it and choose **Open**.
+            - Linux: `-Linux.tar.gz`, then run `./pathplanner` from the extracted folder.
+
+            **Robot library (Java):** in WPILib VS Code, run **WPILib: Manage Vendor Libraries → Install new libraries (online)** and paste:
+            ```
+            ${{ env.SITE_URL }}/PathplannerLib-BackupPaths.json
+            ```
+            Remove `PathplannerLib.json` from your `vendordeps` folder first. This library replaces it and keeps the same `com.pathplanner.lib` classes.
+
+            **Example robot project:** `-ExampleRobot.zip` shows how to connect a PhotonVision detection camera to the regions. Copy the `sensors` folder, `BackupPathOptions.java`, `detection-camera.json` and `configureDetection()` into your robot code.
+          files: |
+            artifacts/app-windows/*
+            artifacts/app-macos/*
+            artifacts/app-linux/*
+            artifacts/vendordep/*
+            artifacts/example/*
