@@ -70,4 +70,27 @@ public final class RegionGeometry {
     if (team == ObstacleTeam.TEAMMATE) return color == ourAlliance;
     return color != ourAlliance;
   }
+
+  /**
+   * Whether a point is inside a polygon. Works for any simple shape with its corners listed in
+   * order around the edge, such as the four corners of a pickup zone.
+   *
+   * @param corners the polygon corners, in order
+   * @param x point x, meters
+   * @param y point y, meters
+   * @return true if the point is inside. False if there are fewer than 3 corners.
+   */
+  public static boolean insidePolygon(List<Point> corners, double x, double y) {
+    if (corners == null || corners.size() < 3) return false;
+    boolean inside = false;
+    for (int i = 0, j = corners.size() - 1; i < corners.size(); j = i++) {
+      Point a = corners.get(i);
+      Point b = corners.get(j);
+      if ((a.y() > y) != (b.y() > y)) {
+        double crossX = (b.x() - a.x()) * (y - a.y()) / (b.y() - a.y()) + a.x();
+        if (x < crossX) inside = !inside;
+      }
+    }
+    return inside;
+  }
 }

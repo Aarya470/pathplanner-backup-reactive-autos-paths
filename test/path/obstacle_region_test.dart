@@ -109,4 +109,64 @@ void main() {
     expect(parsed.trigger, RegionTrigger.robot);
     expect(parsed.pieceMaxDistance, ObstacleRegion.defaultPieceMaxDistance);
   });
+
+  test('Pickup zone round trips through the path file', () {
+    ObstacleRegion region = ObstacleRegion(
+      startPos: 0.2,
+      endPos: 0.8,
+      trigger: RegionTrigger.gamePiece,
+      pickupZone: const [
+        Translation2d(1.0, 1.0),
+        Translation2d(3.0, 1.0),
+        Translation2d(3.0, 3.0),
+        Translation2d(1.0, 3.0),
+      ],
+    );
+
+    Map<String, dynamic> json = region.toJson();
+    expect(json['pickupZone'], [
+      {'x': 1.0, 'y': 1.0},
+      {'x': 3.0, 'y': 1.0},
+      {'x': 3.0, 'y': 3.0},
+      {'x': 1.0, 'y': 3.0},
+    ]);
+
+    ObstacleRegion parsed = ObstacleRegion.fromJson(json,
+        pathsDir: '/paths', fs: MemoryFileSystem());
+    expect(parsed.pickupZone, region.pickupZone);
+    expect(parsed, region);
+  });
+
+  test('Regions without a zone do not save one', () {
+    ObstacleRegion region = ObstacleRegion(
+        startPos: 0, endPos: 1, trigger: RegionTrigger.gamePiece);
+    expect(region.toJson().containsKey('pickupZone'), false);
+    expect(
+        ObstacleRegion.fromJson(region.toJson(),
+                pathsDir: '/paths', fs: MemoryFileSystem())
+            .pickupZone,
+        isNull);
+  });
+
+  test('A copied zone can be changed without changing the original', () {
+    ObstacleRegion region = ObstacleRegion(
+        startPos: 0,
+        endPos: 1,
+        trigger: RegionTrigger.gamePiece,
+        pickupZone: ObstacleRegion.squareZone(const Translation2d(2, 2)));
+    ObstacleRegion copy = region.clone();
+    copy.pickupZone![0] = const Translation2d(9, 9);
+    expect(region.pickupZone![0], isNot(const Translation2d(9, 9)));
+    expect(copy == region, false);
+  });
+
+  test('A new zone is a square around the center', () {
+    final zone = ObstacleRegion.squareZone(const Translation2d(2, 3), 0.5);
+    expect(zone, const [
+      Translation2d(1.5, 2.5),
+      Translation2d(2.5, 2.5),
+      Translation2d(2.5, 3.5),
+      Translation2d(1.5, 3.5),
+    ]);
+  });
 }

@@ -6,6 +6,7 @@ import 'package:pathplanner/path/pathplanner_path.dart';
 import 'package:pathplanner/widgets/editor/tree_widgets/item_count.dart';
 import 'package:pathplanner/widgets/editor/tree_widgets/tree_card_node.dart';
 import 'package:pathplanner/widgets/number_text_field.dart';
+import 'package:pathplanner/util/wpimath/geometry.dart';
 import 'package:undo/undo.dart';
 
 class ObstacleRegionsTree extends StatefulWidget {
@@ -59,6 +60,12 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
     while (_controllers.length > regions.length) {
       _controllers.removeLast();
     }
+  }
+
+  /// A square zone centered on the middle of the region's part of the path
+  List<Translation2d> _defaultZone(ObstacleRegion region) {
+    final num mid = (region.startPos + region.endPos) / 2;
+    return ObstacleRegion.squareZone(widget.path.samplePath(mid));
   }
 
   /// Make a change that can be undone. [change] edits the path's region list.
@@ -170,21 +177,59 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
         ),
         if (region.trigger == RegionTrigger.gamePiece) ...[
           const SizedBox(height: 8),
-          const Text(
-              'If a game piece is seen this close to the robot while it is in this part of the path, the robot drives to it with the intake running.'),
-          const SizedBox(height: 8),
-          NumberTextField(
-            key: ValueKey('pieceDist$index'),
-            initialValue: region.pieceMaxDistance,
-            label: 'Max distance to the piece (m)',
-            minValue: 0.1,
-            precision: 2,
-            onSubmitted: (value) {
-              if (value != null && value > 0) {
-                _edit(() => region.pieceMaxDistance = value.toDouble());
-              }
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.social_distance_rounded),
+                  label: Text('Within a distance')),
+              ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.crop_square_rounded),
+                  label: Text('Inside a zone')),
+            ],
+            selected: {region.pickupZone != null},
+            onSelectionChanged: (selection) {
+              final bool useZone = selection.first;
+              _edit(() {
+                region.pickupZone = useZone ? _defaultZone(region) : null;
+              });
+              if (useZone) widget.onRegionSelected?.call(index);
             },
           ),
+          const SizedBox(height: 8),
+          if (region.pickupZone == null) ...[
+            const Text(
+                'If a game piece is seen this close to the robot while it is in this part of the path, the robot drives to it with the intake running.'),
+            const SizedBox(height: 8),
+            NumberTextField(
+              key: ValueKey('pieceDist$index'),
+              initialValue: region.pieceMaxDistance,
+              label: 'Max distance to the piece (m)',
+              minValue: 0.1,
+              precision: 2,
+              onSubmitted: (value) {
+                if (value != null && value > 0) {
+                  _edit(() => region.pieceMaxDistance = value.toDouble());
+                }
+              },
+            ),
+          ] else ...[
+            const Text(
+                'While the robot is in this part of the path, any game piece seen inside the orange zone is picked up. Pieces outside the zone are ignored. Drag the 4 corners on the field to shape the zone.'),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
+                label: const Text('Re-center zone on this region'),
+                onPressed: () {
+                  _edit(() => region.pickupZone = _defaultZone(region));
+                  widget.onRegionSelected?.call(index);
+                },
+              ),
+            ),
+          ],
         ],
         if (region.trigger == RegionTrigger.robot) ...[
           const SizedBox(height: 8),

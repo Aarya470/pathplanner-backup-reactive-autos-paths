@@ -2,10 +2,12 @@ package com.pathplanner.lib.obstacle;
 
 import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.obstacle.RegionMonitor.Decision;
+import com.pathplanner.lib.path.EventMarker;
 import com.pathplanner.lib.path.GoalEndState;
 import com.pathplanner.lib.path.PathConstraints;
 import com.pathplanner.lib.path.PathPlannerPath;
 import com.pathplanner.lib.path.PathPoint;
+import com.pathplanner.lib.path.PointTowardsZone;
 import com.pathplanner.lib.util.FlippingUtil;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -34,11 +36,15 @@ import java.util.function.BooleanSupplier;
  *       or divert (robot still there and action is DIVERT).
  * </ul>
  *
- * <p>Game piece regions: while the robot is in the region, if a game piece is close enough, leave
- * the path, drive to the piece with the intake running, then either rejoin the main path after the
- * region (CONTINUE) or follow the diverge path (DIVERT). If no piece is seen, the main path goes
- * on, and so does a robot that is already holding a piece (when a has-piece sensor is set up).
- * After a rejoin, later regions on the same path are not watched.
+ * <p>Game piece regions: while the robot is in the region, if a game piece is inside the region's
+ * pickup zone (or, with no zone, close enough to the robot), leave the path, drive to the piece
+ * with the intake running, then either rejoin the main path at the end of the region (CONTINUE)
+ * or follow the diverge path (DIVERT). If no piece is seen, the main path goes on, and so does a
+ * robot that is already holding a piece (when a has-piece sensor is set up).
+ *
+ * <p>A rejoin drives back to the main path facing the way the path faces there, at the path's
+ * speed there, then finishes the path. Event markers after that point still fire, and later
+ * regions on the path are still watched.
  *
  * <p>Robot code does not call this directly. {@code AutoBuilder.followPath} uses it when the path
  * has regions and {@link ObstacleSettings} is configured.
@@ -73,6 +79,42 @@ public final class ObstacleRegionRunner {
     }
   }
 
+  /** What every stretch of one run shares */
+  private static final class Run {
+    final PathConstraints constraints;
+    final GoalEndState goal;
+    final Subsystem[] drive;
+    final Set<Subsystem> reqs;
+    final List<EventMarker> markers;
+    final List<PointTowardsZone> pointZones;
+    final RotationProfile rotations;
+
+    Run(PathPlannerPath path, Subsystem[] drive, Set<Subsystem> reqs) {
+      this.constraints = path.getGlobalConstraints();
+      this.goal = path.getGoalEndState();
+      this.drive = drive;
+      this.reqs = reqs;
+      this.markers = path.getEventMarkers();
+      this.pointZones = path.getPointTowardsZones();
+      this.rotations = RotationProfile.of(path);
+    }
+
+    /** A path for part of the main path, with the markers and zones that are on that part */
+    PathPlannerPath stretch(List<PathPoint> points) {
+      double start = points.get(0).waypointRelativePos;
+      List<EventMarker> keptMarkers = new ArrayList<>();
+      for (EventMarker m : markers) {
+        boolean zoned = m.endPosition() >= 0.0;
+        if (m.position() >= start || (zoned && m.endPosition() > start)) keptMarkers.add(m);
+      }
+      List<PointTowardsZone> keptZones = new ArrayList<>();
+      for (PointTowardsZone z : pointZones) {
+        if (z.maxPosition() > start) keptZones.add(z);
+      }
+      return PathPlannerPath.fromPathPoints(points, constraints, goal, keptMarkers, keptZones);
+    }
+  }
+
   /**
    * Build the command for a path with regions. The dashboard options are read when the command
    * starts, not when it is built, so they can be changed right up until the path runs.
@@ -96,22 +138,14 @@ public final class ObstacleRegionRunner {
           for (ObstacleRegion r : path.getObstacleRegions()) {
             watches.add(new Watch(r));
           }
-          return segment(
-              path.getAllPathPoints(), path.getGlobalConstraints(), path.getGoalEndState(),
-              watches, drive, reqs);
+          return segment(path.getAllPathPoints(), watches, new Run(path, drive, reqs));
         },
         reqs);
   }
 
   /** Follow a stretch of path, stopping early if a region needs action. */
-  private static Command segment(
-      List<PathPoint> points,
-      PathConstraints constraints,
-      GoalEndState goal,
-      List<Watch> watches,
-      Subsystem[] drive,
-      Set<Subsystem> reqs) {
-    PathPlannerPath stretch = PathPlannerPath.fromPathPoints(points, constraints, goal);
+  private static Command segment(List<PathPoint> points, List<Watch> watches, Run run) {
+    PathPlannerPath stretch = run.stretch(points);
     if (watches.isEmpty()) {
       return AutoBuilder.followPath(stretch);
     }
@@ -134,28 +168,22 @@ public final class ObstacleRegionRunner {
                 return diverge(hit[0].region);
               }
               if (decision[0] == Decision.PICKUP) {
-                return pickup(points, constraints, goal, hit[0], drive, reqs);
+                return pickup(points, watches, hit[0], run);
               }
-              return waitThenDecide(points, constraints, goal, watches, hit[0], drive, reqs);
+              return waitThenDecide(points, watches, hit[0], run);
             },
-            reqs);
+            run.reqs);
 
     return follow.andThen(Commands.either(afterFollow, Commands.none(), () -> hit[0] != null));
   }
 
   /** Stop and wait for the timeout, then resume or divert. */
   private static Command waitThenDecide(
-      List<PathPoint> points,
-      PathConstraints constraints,
-      GoalEndState goal,
-      List<Watch> watches,
-      Watch watch,
-      Subsystem[] drive,
-      Set<Subsystem> reqs) {
+      List<PathPoint> points, List<Watch> watches, Watch watch, Run run) {
     Decision[] result = {Decision.STOP};
 
     Command hold =
-        Commands.run(ObstacleSettings.getStopDrive(), drive)
+        Commands.run(ObstacleSettings.getStopDrive(), run.drive)
             .until(
                 () -> {
                   // The condition can be checked again after it first returns true. Keep the
@@ -178,27 +206,15 @@ public final class ObstacleRegionRunner {
               int idx = nearestIndex(points);
               if (idx < 0) return Commands.none();
               List<PathPoint> rest = new ArrayList<>(points.subList(idx, points.size()));
-              List<Watch> later = new ArrayList<>();
-              for (Watch w : watches) {
-                if (w != watch
-                    && !w.isDone()
-                    && w.region.getEndPos() > points.get(idx).waypointRelativePos) {
-                  later.add(w);
-                }
-              }
-              return segment(rest, constraints, goal, later, drive, reqs);
+              return segment(
+                  rest, laterWatches(watches, watch, points.get(idx).waypointRelativePos), run);
             },
-            reqs));
+            run.reqs));
   }
 
   /** Drive to the game piece with the intake running, then rejoin the main path or divert. */
   private static Command pickup(
-      List<PathPoint> points,
-      PathConstraints constraints,
-      GoalEndState goal,
-      Watch watch,
-      Subsystem[] drive,
-      Set<Subsystem> reqs) {
+      List<PathPoint> points, List<Watch> watches, Watch watch, Run run) {
     Translation2d piece = watch.pieceTarget;
     Pose2d robot = ObstacleSettings.getPoseSupplier().get();
     // Point the intake at the piece
@@ -210,9 +226,9 @@ public final class ObstacleRegionRunner {
 
     // The piece position is a real field position, so it is not flipped
     Command arrive =
-        AutoBuilder.pathfindToPose(new Pose2d(piece, heading), constraints)
+        AutoBuilder.pathfindToPose(new Pose2d(piece, heading), run.constraints)
             .andThen(
-                Commands.run(ObstacleSettings.getStopDrive(), drive)
+                Commands.run(ObstacleSettings.getStopDrive(), run.drive)
                     .withTimeout(GamePieceSettings.getIntakeAfterArriveSec()));
 
     BooleanSupplier hasPiece = GamePieceSettings.getHasPiece();
@@ -227,28 +243,63 @@ public final class ObstacleRegionRunner {
               boolean divert =
                   ObstacleSettings.effectiveAction(watch.region.getAction()) == RegionAction.DIVERT
                       && divertPathFor(watch.region) != null;
-              return divert
-                  ? diverge(watch.region)
-                  : rejoin(points, constraints, goal, watch.region);
+              return divert ? diverge(watch.region) : rejoin(points, watches, watch, run);
             },
-            reqs);
+            run.reqs);
 
     return grab.andThen(after);
   }
 
-  /** Go back to the main path where the region ends and finish it. */
-  private static Command rejoin(
-      List<PathPoint> points, PathConstraints constraints, GoalEndState goal, ObstacleRegion region) {
-    List<PathPoint> rest = new ArrayList<>();
-    for (PathPoint p : points) {
-      if (p.waypointRelativePos >= region.getEndPos()) rest.add(p);
+  /**
+   * Go back to the main path where the region ends, facing the way the path faces there and at the
+   * path's speed there, then finish the path. Later regions are still watched and later event
+   * markers still fire.
+   */
+  private static Command rejoin(List<PathPoint> points, List<Watch> watches, Watch watch, Run run) {
+    ObstacleRegion region = watch.region;
+    int first = -1;
+    for (int i = 0; i < points.size(); i++) {
+      if (points.get(i).waypointRelativePos >= region.getEndPos()) {
+        first = i;
+        break;
+      }
     }
-    if (rest.size() < 2) {
-      Translation2d end = points.get(points.size() - 1).position;
-      return AutoBuilder.pathfindToPoseFlipped(new Pose2d(end, goal.rotation()), constraints);
+    if (first < 0 || points.size() - first < 2) {
+      // The region ends at the end of the path: just go to the end
+      PathPoint end = points.get(points.size() - 1);
+      return AutoBuilder.pathfindToPoseFlipped(
+          new Pose2d(end.position, run.goal.rotation()), run.constraints);
     }
-    PathPlannerPath restPath = PathPlannerPath.fromPathPoints(rest, constraints, goal);
-    return AutoBuilder.pathfindThenFollowPath(restPath, constraints);
+
+    List<PathPoint> rest = new ArrayList<>(points.subList(first, points.size()));
+    PathPoint join = rest.get(0);
+    // Holonomic robots face the way the path faces there. Others face the way the path goes.
+    Rotation2d travel = rest.get(1).position.minus(join.position).getAngle();
+    Rotation2d heading =
+        AutoBuilder.isHolonomic() ? run.rotations.at(join.waypointRelativePos) : null;
+    if (heading == null) {
+      heading = travel;
+    }
+    double joinSpeed = Math.min(run.constraints.maxVelocityMPS(), join.maxV);
+    if (join.constraints != null) {
+      joinSpeed = Math.min(joinSpeed, join.constraints.maxVelocityMPS());
+    }
+
+    // Path points are blue-side, so flip the join pose on red like the path follower does
+    Command goBack =
+        AutoBuilder.pathfindToPoseFlipped(
+            new Pose2d(join.position, heading), run.constraints, joinSpeed);
+    return goBack.andThen(
+        segment(rest, laterWatches(watches, watch, join.waypointRelativePos), run));
+  }
+
+  /** Regions still to come after [pos], not counting [done] */
+  private static List<Watch> laterWatches(List<Watch> watches, Watch done, double pos) {
+    List<Watch> later = new ArrayList<>();
+    for (Watch w : watches) {
+      if (w != done && !w.isDone() && w.region.getEndPos() > pos) later.add(w);
+    }
+    return later;
   }
 
   /** Check every region that is not done. Returns the first decision that needs action. */
@@ -293,10 +344,17 @@ public final class ObstacleRegionRunner {
 
     Pose2d robot = ObstacleSettings.getPoseSupplier().get();
     double now = Timer.getFPGATimestamp();
+    List<Point> zone = fieldZone(watch.region);
     Translation2d best = null;
-    double bestDist = watch.region.getPieceMaxDistanceM();
+    // With a zone, any piece inside it counts and the closest one is picked. Without a zone,
+    // only pieces within the max distance count.
+    double bestDist = zone.isEmpty() ? watch.region.getPieceMaxDistanceM() : Double.POSITIVE_INFINITY;
     for (GamePiece g : GamePieceSettings.getSource().getGamePieces()) {
       if (now - g.timestampSec() > ObstacleSettings.getStaleAfterSec()) continue;
+      if (!zone.isEmpty()
+          && !RegionGeometry.insidePolygon(zone, g.position().x(), g.position().y())) {
+        continue;
+      }
       Translation2d at = new Translation2d(g.position().x(), g.position().y());
       double dist = at.getDistance(robot.getTranslation());
       if (dist <= bestDist) {
@@ -308,6 +366,21 @@ public final class ObstacleRegionRunner {
     watch.pieceTarget = best;
     watch.pieceDone = true;
     return Decision.PICKUP;
+  }
+
+  /**
+   * The region's pickup zone on the real field. Zones are saved on the blue side like paths, so
+   * they are flipped on red to match the game piece positions.
+   */
+  private static List<Point> fieldZone(ObstacleRegion region) {
+    if (!region.hasPickupZone()) return List.of();
+    if (!AutoBuilder.shouldFlip()) return region.getPickupZone();
+    List<Point> flipped = new ArrayList<>();
+    for (Point c : region.getPickupZone()) {
+      Translation2d f = FlippingUtil.flipFieldPosition(new Translation2d(c.x(), c.y()));
+      flipped.add(new Point(f.getX(), f.getY()));
+    }
+    return flipped;
   }
 
   /** The diverge path to use: the dashboard pick wins over the region's own path. */

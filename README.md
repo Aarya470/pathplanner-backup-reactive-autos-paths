@@ -7,7 +7,7 @@ Made by Aaryan Roy on FRC Team 1089. This is not an official PathPlanner release
 ## What it adds
 
 - **Robot in the way regions.** Draw a region on a path. If a robot is detected there, your robot waits, diverts onto a backup path you draw from the region edge, or continues.
-- **Game piece regions.** If a game piece is seen close enough while the robot is in the region, the robot drives to it with the intake running, then rejoins the main path or follows a divert path.
+- **Game piece regions.** If a game piece is seen while the robot is in the region, the robot drives to it with the intake running, then rejoins the main path or follows a divert path. Choose which pieces count: anything within a max distance of the robot, or anything inside a 4-corner **pickup zone** you drag on the field.
 - **Both alliances are detected.** Teammates and opponents can both trigger a region.
 - **Dashboard toggles** (Elastic) to turn divert, wait and pickup on or off without redeploying.
 - Everything else works like normal PathPlanner.

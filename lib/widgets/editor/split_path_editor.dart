@@ -86,6 +86,8 @@ class _SplitPathEditorState extends State<SplitPathEditor>
   int? _draggedRotationIdx;
   Translation2d? _draggedRotationPos;
   Rotation2d? _dragRotationOldValue;
+  int? _draggedZoneCorner;
+  List<Translation2d>? _zoneDragOldValue;
   PathPlannerTrajectory? _simTraj;
   bool _paused = false;
   late bool _holonomicMode;
@@ -237,6 +239,43 @@ class _SplitPathEditorState extends State<SplitPathEditor>
       return false;
     }
     return widget.path.obstacleRegions[_viewRegionIndex].blockTimeoutSec != null;
+  }
+
+  /// The pickup zone of the selected game piece region, if it has one. Only on the main path.
+  List<Translation2d>? _selectedPickupZone() {
+    if (_divertTarget != null || _selectedRegion == null) return null;
+    final regions = widget.path.obstacleRegions;
+    if (_selectedRegion! >= regions.length) return null;
+    final ObstacleRegion region = regions[_selectedRegion!];
+    if (region.trigger != RegionTrigger.gamePiece) return null;
+    return region.pickupZone;
+  }
+
+  /// Save a finished zone corner drag so it can be undone
+  void _finishZoneDrag() {
+    final int regionIdx = _selectedRegion!;
+    final List<Translation2d> before = _zoneDragOldValue!;
+    final List<Translation2d> after =
+        List.of(widget.path.obstacleRegions[regionIdx].pickupZone!);
+    _draggedZoneCorner = null;
+    _zoneDragOldValue = null;
+
+    void setZone(List<Translation2d> zone) {
+      if (regionIdx >= widget.path.obstacleRegions.length) return;
+      setState(() {
+        widget.path.obstacleRegions[regionIdx].pickupZone = List.of(zone);
+        widget.path.saveFile();
+      });
+      if (widget.hotReload) {
+        widget.telemetry?.hotReloadPath(widget.path);
+      }
+    }
+
+    widget.undoStack.add(Change(
+      before,
+      () => setZone(after),
+      (oldValue) => setZone(oldValue),
+    ));
   }
 
   /// The main path up to the exact end of the region, then the pivot path
@@ -417,6 +456,24 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                 double xPos = _xPixelsToMeters(details.localPosition.dx);
                 double yPos = _yPixelsToMeters(details.localPosition.dy);
 
+                // A corner of the selected region's pickup zone
+                final List<Translation2d>? zone = _selectedPickupZone();
+                if (zone != null) {
+                  final num grab = _pixelsToMeters(
+                      PathPainterUtil.uiPointSizeToPixels(
+                          PathPainter.zoneCornerSize,
+                          PathPainter.scale,
+                          widget.fieldImage));
+                  final Translation2d pointer = Translation2d(xPos, yPos);
+                  for (int c = 0; c < zone.length; c++) {
+                    if (zone[c].getDistance(pointer) <= grab) {
+                      _draggedZoneCorner = c;
+                      _zoneDragOldValue = List.of(zone);
+                      return;
+                    }
+                  }
+                }
+
                 for (int i = waypoints.length - 1; i >= 0; i--) {
                   Waypoint w = waypoints[i];
                   if (_divertTarget != null && i == 0) continue;
@@ -477,6 +534,17 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                 }
               },
               onPanUpdate: (details) {
+                if (_draggedZoneCorner != null) {
+                  final List<Translation2d>? zone = _selectedPickupZone();
+                  if (zone != null && _draggedZoneCorner! < zone.length) {
+                    setState(() {
+                      zone[_draggedZoneCorner!] = Translation2d(
+                          _xPixelsToMeters(details.localPosition.dx),
+                          _yPixelsToMeters(details.localPosition.dy));
+                    });
+                  }
+                  return;
+                }
                 if (_draggedPoint != null) {
                   num targetX = _xPixelsToMeters(min(
                       88 +
@@ -560,6 +628,10 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                 }
               },
               onPanEnd: (details) {
+                if (_draggedZoneCorner != null) {
+                  _finishZoneDrag();
+                  return;
+                }
                 if (_draggedPoint != null) {
                   _draggedPoint!.stopDragging();
                   int index = waypoints.indexOf(_draggedPoint!);

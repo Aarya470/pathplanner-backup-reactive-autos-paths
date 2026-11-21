@@ -190,6 +190,30 @@ public class PathPlannerPath {
   }
 
   /**
+   * Create a path with pre-generated points that keeps event markers and point towards zones. The
+   * points keep their waypoint-relative positions, so markers from the path they came from fire
+   * at the same places.
+   *
+   * @param pathPoints Path points along the smooth curve of the path
+   * @param constraints The global constraints of the path
+   * @param goalEndState The goal end state of the path
+   * @param eventMarkers Event markers on the path
+   * @param pointTowardsZones Point towards zones on the path
+   * @return A PathPlannerPath following the given pathpoints
+   */
+  public static PathPlannerPath fromPathPoints(
+      List<PathPoint> pathPoints,
+      PathConstraints constraints,
+      GoalEndState goalEndState,
+      List<EventMarker> eventMarkers,
+      List<PointTowardsZone> pointTowardsZones) {
+    PathPlannerPath path = fromPathPoints(pathPoints, constraints, goalEndState);
+    path.eventMarkers = new ArrayList<>(eventMarkers);
+    path.pointTowardsZones = new ArrayList<>(pointTowardsZones);
+    return path;
+  }
+
+  /**
    * Create the bezier waypoints necessary to create a path using a list of poses
    *
    * @param poses List of poses. Each pose represents one waypoint.

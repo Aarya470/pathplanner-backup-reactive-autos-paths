@@ -176,6 +176,7 @@ class PathPainter extends CustomPainter {
                 ? Colors.orange
                 : colorScheme.secondary);
         _paintRegions(paths[i], canvas, scale);
+        _paintPickupZones(paths[i], canvas, scale);
         final pause = continueRegion;
         if (pause != null && pause.blockTimeoutSec != null) {
           canvas.drawCircle(
@@ -727,6 +728,53 @@ class PathPainter extends CustomPainter {
       final bool active = i == selectedRegion || i == hoveredRegion;
       if (active) {
         _paintRegionSpan(path, region, canvas, scale, Colors.yellow);
+      }
+    }
+  }
+
+  /// Size of a pickup zone corner handle, in UI points
+  static const double zoneCornerSize = 18;
+
+  /// Draw the pickup zone of each game piece region. The selected or hovered region's zone is
+  /// drawn brighter, with handles on its corners for dragging.
+  void _paintPickupZones(PathPlannerPath path, Canvas canvas, double scale) {
+    for (int i = 0; i < path.obstacleRegions.length; i++) {
+      final region = path.obstacleRegions[i];
+      final zone = region.pickupZone;
+      if (region.trigger != RegionTrigger.gamePiece || zone == null || zone.length < 3) {
+        continue;
+      }
+      final bool active = i == selectedRegion || i == hoveredRegion;
+      final corners = [
+        for (final c in zone) PathPainterUtil.pointToPixelOffset(c, scale, fieldImage)
+      ];
+      final outline = Path()..addPolygon(corners, true);
+
+      canvas.drawPath(
+          outline,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = Colors.orange.withAlpha(active ? 70 : 35));
+      canvas.drawPath(
+          outline,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = active ? 3 : 2
+            ..color = Colors.orange.withAlpha(active ? 255 : 150));
+
+      if (i == selectedRegion) {
+        final double r =
+            PathPainterUtil.uiPointSizeToPixels(zoneCornerSize / 2, scale, fieldImage);
+        for (final c in corners) {
+          canvas.drawCircle(c, r, Paint()..color = Colors.orange);
+          canvas.drawCircle(
+              c,
+              r,
+              Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 2
+                ..color = Colors.black);
+        }
       }
     }
   }

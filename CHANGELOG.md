@@ -2,6 +2,14 @@
 
 Each version's notes show in the app under **What's new**, and on its GitHub release.
 
+## 1.1.0
+
+- New: pickup zones for game piece regions. Choose **Inside a zone** on a game piece region, then drag the 4 corners of the orange zone on the field. While the robot is in that part of the path, any game piece seen inside the zone is picked up, and pieces outside it are ignored. Regions without a zone still use the max distance.
+- Fixed: after a pickup, the robot now rejoins the path facing the way the path faces there and at the path's speed, instead of turning to face 0°.
+- Fixed: event markers now fire on paths with regions, including after the robot rejoins the path or resumes after waiting.
+- Fixed: regions later on the path are still watched after a pickup and rejoin.
+- Update both the app and the robot library (PathplannerLib-BackupPaths 1.1.0) to use pickup zones. An older library ignores the zone and uses the max distance.
+
 ## 1.0.3
 
 - New: the Windows installer shows who made it (Aaryan Roy, FRC Team 1089) and asks you to accept the terms of use before installing. The terms are also included in the Mac, Linux and portable downloads as TERMS.txt.

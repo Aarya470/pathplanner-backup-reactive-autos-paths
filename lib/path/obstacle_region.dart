@@ -1,5 +1,7 @@
 import 'package:file/file.dart';
+import 'package:flutter/foundation.dart';
 import 'package:pathplanner/path/pathplanner_path.dart';
+import 'package:pathplanner/util/wpimath/geometry.dart';
 
 /// Which robots count as obstacles for a region
 enum ObstacleTeam {
@@ -71,6 +73,14 @@ class ObstacleRegion {
 
   static const double defaultPieceMaxDistance = 2.0;
 
+  /// Game piece regions: corners of the pickup zone in field meters, in order around the edge.
+  /// When set, a piece is picked up only if it is inside this zone, and [pieceMaxDistance] is not
+  /// used. Null means no zone.
+  List<Translation2d>? pickupZone;
+
+  /// Half the width of a new pickup zone, meters
+  static const double defaultZoneHalfSize = 0.75;
+
   ObstacleRegion({
     required this.startPos,
     required this.endPos,
@@ -80,7 +90,19 @@ class ObstacleRegion {
     this.divertPath,
     this.trigger = RegionTrigger.robot,
     this.pieceMaxDistance = defaultPieceMaxDistance,
+    this.pickupZone,
   });
+
+  /// A square pickup zone centered on [center]
+  static List<Translation2d> squareZone(Translation2d center,
+      [double halfSize = defaultZoneHalfSize]) {
+    return [
+      Translation2d(center.x - halfSize, center.y - halfSize),
+      Translation2d(center.x + halfSize, center.y - halfSize),
+      Translation2d(center.x + halfSize, center.y + halfSize),
+      Translation2d(center.x - halfSize, center.y + halfSize),
+    ];
+  }
 
   /// Parse one entry from a path file. [pathsDir] and [fs] are the same values the
   /// parent path was loaded with, so the diverge path can be edited like any other path.
@@ -99,7 +121,16 @@ class ObstacleRegion {
         trigger = RegionTrigger.fromName(json['trigger']),
         pieceMaxDistance = json['pieceMaxDistance'] == null
             ? defaultPieceMaxDistance
-            : (json['pieceMaxDistance'] as num).toDouble();
+            : (json['pieceMaxDistance'] as num).toDouble(),
+        pickupZone = _zoneFromJson(json['pickupZone']);
+
+  static List<Translation2d>? _zoneFromJson(dynamic value) {
+    if (value is! List || value.length < 3) return null;
+    return [
+      for (final corner in value)
+        Translation2d.fromJson(Map<String, dynamic>.from(corner)),
+    ];
+  }
 
   ObstacleRegion clone() {
     return ObstacleRegion(
@@ -111,6 +142,7 @@ class ObstacleRegion {
       divertPath: _copyDivertPath(),
       trigger: trigger,
       pieceMaxDistance: pieceMaxDistance,
+      pickupZone: pickupZone == null ? null : List.of(pickupZone!),
     );
   }
 
@@ -139,6 +171,8 @@ class ObstacleRegion {
       if (divertPath != null) 'divertPath': divertPath!.toJson(),
       'trigger': trigger.name,
       'pieceMaxDistance': pieceMaxDistance,
+      if (pickupZone != null)
+        'pickupZone': [for (final c in pickupZone!) c.toJson()],
     };
   }
 
@@ -152,9 +186,11 @@ class ObstacleRegion {
       other.blockTimeoutSec == blockTimeoutSec &&
       other.action == action &&
       other.trigger == trigger &&
-      other.pieceMaxDistance == pieceMaxDistance;
+      other.pieceMaxDistance == pieceMaxDistance &&
+      listEquals(other.pickupZone, pickupZone);
 
   @override
   int get hashCode => Object.hash(startPos, endPos, obstacleTeam,
-      blockTimeoutSec, action, trigger, pieceMaxDistance);
+      blockTimeoutSec, action, trigger, pieceMaxDistance,
+      pickupZone == null ? null : Object.hashAll(pickupZone!));
 }
