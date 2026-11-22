@@ -23,6 +23,7 @@ class _PPLibUpdateCardState extends State<PPLibUpdateCard>
   late AnimationController _updateController;
   late Animation<Offset> _offsetAnimation;
   bool _visibile = false;
+  String _message = '';
 
   @override
   void initState() {
@@ -38,14 +39,22 @@ class _PPLibUpdateCardState extends State<PPLibUpdateCard>
     ));
 
     widget.updateChecker
-        .isPPLibUpdateAvailable(projectDir: widget.projectDir, fs: widget.fs)
-        .then((value) {
-      if (value) {
-        setState(() {
-          _visibile = true;
-          _updateController.forward();
-        });
+        .checkRobotLibrary(projectDir: widget.projectDir, fs: widget.fs)
+        .then((update) {
+      if (update == RobotLibraryUpdate.none || !mounted) {
+        return;
       }
+      setState(() {
+        if (update == RobotLibraryUpdate.oldLibrary) {
+          _message =
+              'This project uses the 1.x robot library. Remove PathplannerLib-BackupPaths.json '
+              'and install Reactive Autonomous Pathing (see README).';
+        } else {
+          _message = 'Robot library update available!';
+        }
+        _visibile = true;
+        _updateController.forward();
+      });
     });
   }
 
@@ -71,10 +80,12 @@ class _PPLibUpdateCardState extends State<PPLibUpdateCard>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'PathPlannerLib update available!',
-                    style:
-                        TextStyle(fontSize: 18, color: colorScheme.onSurface),
+                  Flexible(
+                    child: Text(
+                      _message,
+                      style:
+                          TextStyle(fontSize: 18, color: colorScheme.onSurface),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(

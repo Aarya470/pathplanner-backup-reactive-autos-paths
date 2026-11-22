@@ -1,9 +1,15 @@
 # Example robot project: PathPlanner Backup Paths
 
-A small swerve robot (it runs in the simulator) that shows how to connect object detection cameras to path regions:
+A small swerve robot (it runs in the simulator) that shows the whole setup:
 
-- `Score.path` has a **Robot in the way** region. When the robot camera sees a robot blocking it, the robot waits up to 1 s for it to move, then goes on.
-- `Pickup.path` has a **Game piece** region with an orange pickup zone. When the piece camera sees a piece inside the zone, the robot drives to it, runs the intake, and rejoins the path.
+- **Official PathplannerLib** for paths and autos
+- **Mercury Vision** for the cameras
+- **Reactive Autonomous Pathing** to make the autos react to the regions drawn in the app
+
+The paths:
+
+- `Score.path` has a **robot in the way** region. When the robot camera sees a robot blocking it, the robot stops at the end of the region, waits 1 s, then goes on.
+- `Pickup.path` has a **game piece** region with an orange pickup zone. When the piece camera sees a piece inside the zone, the robot drives to it, runs the intake, and goes back to the path.
 
 ## Try it
 
@@ -12,63 +18,33 @@ A small swerve robot (it runs in the simulator) that shows how to connect object
 3. Open the paths in **PathPlanner Backup Paths**. Click a region on the right to see its part of the path in yellow, and drag the 4 orange dots to reshape a pickup zone.
 4. Run `Example Auto` from the dashboard.
 
-The dashboard shows **Robot Camera** and **Piece Camera**, each with its status (`OK`, `Wrong class ID 3`, `Not mounted`, ...), how many things it sees, and the closest distance. Use them while setting up.
+The dashboard shows:
 
-## The setup, all in RobotContainer.java
+- **Robot Camera** and **Piece Camera**: each camera's status (`OK`, `Ignored class 3`, `Not mounted`, ...), what it sees, and the closest distances
+- **Reactive Pathing/Step**: what the robot is doing on a path with regions
 
-```java
-private final Camera robotCamera = Camera.photon("DetectionCam")
-    .mountedAt(-0.41, 0.0, 0.13, 0, 180)   // forward m, left m, height m, tilt down deg, facing deg
-    .redClasses(1).blueClasses(2);
+## Where everything is
 
-private final Camera pieceCamera = Camera.photon("IntakeCam")
-    .mountedAt(-0.36, 0.0, 0.30, 20, 180)
-    .onlyClasses(0);
-
-private void configureBackupPaths() {
-  BackupPaths.setup(swerve::getPose, () -> swerve.driveRobotRelative(new ChassisSpeeds()));
-  BackupPaths.watchForRobots(robotCamera);
-  BackupPaths.intakeIsOnBack();
-  BackupPaths.pickUpGamePieces(
-      pieceCamera,
-      () -> Commands.print("Intake running").andThen(Commands.idle()), // your intake command
-      null);                                                           // your beam break, or null
-      // add your intake subsystem as the last argument
-}
-```
-
-`configureBackupPaths()` runs before `AutoBuilder.buildAutoChooser()`. It has to run before any auto is built.
-
-## Using a Limelight or another camera
-
-Change only how the camera is made. Everything else stays the same.
-
-```java
-Camera.limelight("limelight-front")                          // Limelight, no extra library
-Camera.photon("DetectionCam")                                // PhotonVision, needs PhotonLib
-Camera.fromAngles(() -> myTargets())                         // any camera that gives tx/ty angles
-Camera.fromFieldPositions(() -> myFieldPositions())          // anything that gives field positions
-```
-
-With a Limelight, run a neural detector pipeline. Without PhotonVision cameras, you can remove `vendordeps/photonlib.json`.
+| What | Where |
+| --- | --- |
+| Path following setup: `ReactivePathing.configure(...)`, the same arguments as `AutoBuilder.configure(...)` | `subsystems/SwerveSubsystem.java` |
+| The cameras | the top of `RobotContainer.java` |
+| Connecting the cameras and intake to the regions | `configureRegions()` in `RobotContainer.java` |
+| A camera used outside of autos (`robotNearby(1.5)`) | `configureBindings()` in `RobotContainer.java` |
 
 ## Put it in your own robot code
 
-1. Add the **PathplannerLib-BackupPaths** vendor library in place of PathplannerLib (remove any `PathplannerLib*.json` from `vendordeps`). For PhotonVision cameras, add **PhotonLib** too.
-2. Copy the two camera fields and `configureBackupPaths()` from `RobotContainer.java`.
-3. Measure your cameras for `mountedAt`, from the robot's center on the floor:
-   - forward and left, in meters (negative = behind or to the right)
-   - the lens height above the floor, in meters
-   - how far the camera is tilted down, in degrees (0 = level)
-   - which way it faces, in degrees: 0 forward, 90 left, 180 back, -90 right
-4. Set the class numbers your model uses: `redClasses` and `blueClasses` for robots (so regions can tell teammates from opponents), `onlyClasses` for game pieces.
-5. Put in your intake's command, beam break (or `null`) and subsystem, for example `BackupPaths.pickUpGamePieces(pieceCamera, intake::intakeCommand, intake::hasPiece, intake)`. The subsystem matters: without it, the intake's default command keeps running during a pickup. Remove `intakeIsOnBack()` if your intake is on the front.
+1. Install the vendor libraries (WPILib VS Code: **Manage Vendor Libraries → Install new libraries (online)**):
+   ```
+   https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json
+   https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json
+   https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/ReactiveAutonomousPathing.json
+   ```
+   For PhotonVision cameras, also install PhotonLib. Its version must match PhotonVision on your coprocessor (this example uses `v2026.3.4`). For Limelights, you don't need it.
+2. Change `AutoBuilder.configure(...)` to `ReactivePathing.configure(...)`. Keep the arguments.
+3. Copy the camera fields and `configureRegions()` from `RobotContainer.java`, and call `configureRegions()` before `AutoBuilder.buildAutoChooser()`.
+4. Measure your cameras for `mountedAt(forward, left, height, tiltDown, facing)`, from the robot's center on the floor. Mercury Vision's `tools/camera_check.py` helps.
+5. Set the class numbers your model uses: `redRobotClasses`, `blueRobotClasses` (or `robotClasses`) and `gamePieceClasses`.
+6. Put in your intake's command, beam break (or `null`) and subsystem, for example `ReactivePathing.pickUpGamePieces(pieceCamera, intake::intakeCommand, intake::hasPiece, intake)`. The subsystem matters: it is how the library tells if your auto is already running the intake, so it doesn't start it twice. Remove `intakeIsOnBack()` if your intake is on the front.
 
-Use a separate `Camera` object for robots and for game pieces, each with its own classes, even if both read the same physical camera. With one shared object, game pieces would count as robots in the way and robots could be "picked up".
-
-## PhotonVision notes
-
-- The PhotonLib version in `vendordeps/photonlib.json` (now `v2026.3.4`) must match the PhotonVision version on your coprocessor. If they differ, nothing comes through. Update one to match the other.
-- Calibrate each camera in PhotonVision at the resolution its detection pipeline uses. Distances then use the calibration, which is the most accurate. Without it, the angles are used, like a Limelight.
-
-`camera_check.py` works out a camera's tilt from one tape measurement and checks where a target lands, for Limelight angles or PhotonVision pixels, with the same math as the robot code. Run `python camera_check.py --help` to see how.
+Using a Limelight? Change `Camera.photonVision("...")` to `Camera.limelight("limelight-name")`. Nothing else changes.

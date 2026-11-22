@@ -6,25 +6,25 @@ package frc.robot;
 
 import java.util.List;
 
-import com.pathplanner.lib.BackupPaths;
+import com.mercury1089.reactivepathing.ReactivePathing;
+import com.mercury1089.vision.Camera;
 import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.PathPlannerAuto;
 import com.pathplanner.lib.events.EventTrigger;
-import com.pathplanner.lib.detection.Camera;
 import com.pathplanner.lib.path.GoalEndState;
 import com.pathplanner.lib.path.PathConstraints;
 import com.pathplanner.lib.path.PathPlannerPath;
 import com.pathplanner.lib.path.Waypoint;
 
 import edu.wpi.first.math.geometry.Pose2d;
-import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
@@ -40,22 +40,23 @@ public class RobotContainer {
   // The robot's subsystems and commands are defined here...
   private final SwerveSubsystem swerve = new SwerveSubsystem();
 
-  // Object detection cameras. mountedAt(forward m, left m, height m, tilt down deg, facing deg),
-  // measured from the robot's center on the floor. Facing: 0 = forward, 180 = backward.
+  // Object detection cameras, from Mercury Vision.
+  // mountedAt(forward m, left m, height m, tilt down degrees, facing degrees), measured from the
+  // robot's center on the floor. Facing: 0 = forward, 180 = backward.
   //
-  // Using a Limelight instead? Swap Camera.photon("...") for Camera.limelight("limelight-name").
+  // Using a Limelight? Swap Camera.photonVision("...") for Camera.limelight("limelight-name").
   // Anything else? See Camera.fromAngles(...) and Camera.fromFieldPositions(...).
 
-  /** Sees robots, for "Robot in the way" regions. Classes 1 and 2 are red and blue robots. */
-  private final Camera robotCamera = Camera.photon("DetectionCam")
+  /** Sees robots. In the model, class 1 is a red robot and class 2 is a blue robot. */
+  private final Camera robotCamera = Camera.photonVision("DetectionCam")
       .mountedAt(-0.41, 0.0, 0.13, 0, 180)
-      .redClasses(1)
-      .blueClasses(2);
+      .redRobotClasses(1)
+      .blueRobotClasses(2);
 
-  /** Sees game pieces, for "Game piece" regions. Class 0 is a game piece. */
-  private final Camera pieceCamera = Camera.photon("IntakeCam")
+  /** Sees game pieces. In the model, class 0 is a game piece. */
+  private final Camera pieceCamera = Camera.photonVision("IntakeCam")
       .mountedAt(-0.36, 0.0, 0.30, 20, 180)
-      .onlyClasses(0);
+      .gamePieceClasses(0);
 
   private final SendableChooser<Command> autoChooser;
 
@@ -69,8 +70,8 @@ public class RobotContainer {
     // Use event markers as triggers
     new EventTrigger("Example Marker").onTrue(Commands.print("Passed an event marker"));
 
-    // Path regions: must run before the autos are built
-    configureBackupPaths();
+    // Path regions: run this before the autos are built
+    configureRegions();
 
     // Configure the trigger bindings
     configureBindings();
@@ -80,22 +81,22 @@ public class RobotContainer {
   }
 
   /**
-   * Connect the cameras and intake to path regions. Paths with "Robot in the way" regions then wait
-   * or divert when a robot blocks them, and paths with "Game piece" regions (like Pickup.path) pick
-   * up a piece seen in the orange zone and rejoin the path.
+   * Connect the cameras and intake to the regions drawn in the app. Paths with "robot in the way"
+   * regions (like Score.path) then wait or divert when a robot blocks them, and paths with "game
+   * piece" regions (like Pickup.path) pick up a piece seen in the orange zone and go back to the
+   * path. Path following itself is set up in SwerveSubsystem, with ReactivePathing.configure(...).
    */
-  private void configureBackupPaths() {
-    BackupPaths.setup(swerve::getPose, () -> swerve.driveRobotRelative(new ChassisSpeeds()));
-    BackupPaths.watchForRobots(robotCamera);
+  private void configureRegions() {
+    ReactivePathing.watchForRobots(robotCamera);
 
-    BackupPaths.intakeIsOnBack();
-    BackupPaths.pickUpGamePieces(
+    ReactivePathing.intakeIsOnBack();
+    ReactivePathing.pickUpGamePieces(
         pieceCamera,
         // Replace with your intake's command, for example intake::intakeCommand
         () -> Commands.print("Intake running").andThen(Commands.idle()),
         // Replace with your beam break, for example intake::hasPiece (null = run 0.5 s at the piece)
         null);
-        // Then add your intake subsystem as the last argument
+        // Then add your intake subsystem as the last argument, for example: null, intake);
   }
 
   /**
@@ -109,17 +110,18 @@ public class RobotContainer {
    */
   private void configureBindings() {
     // Cameras work outside of autos too: print when a robot is within 1.5 m
-    new Trigger(() -> robotCamera.seesSomethingWithin(1.5)).onTrue(Commands.print("Robot nearby"));
+    robotCamera.robotNearby(1.5).onTrue(Commands.print("Robot nearby"));
 
-    // Each camera's status ("OK", "Wrong class ID 3", ...) and what it sees, for setting up
+    // Each camera's status ("OK", "Ignored class 3", ...) and what it sees, for setting up
     SmartDashboard.putData("Robot Camera", robotCamera);
     SmartDashboard.putData("Piece Camera", pieceCamera);
 
     // Add a button to run the example auto to SmartDashboard, this will also be in the auto chooser built above
     SmartDashboard.putData("Example Auto", new PathPlannerAuto("Example Auto"));
 
-    // Add a button to run pathfinding commands to SmartDashboard
-    SmartDashboard.putData("Pathfind to Pickup Pos", AutoBuilder.pathfindToPose(
+    // Add a button to run pathfinding commands to SmartDashboard. (With ReactivePathing, use its
+    // pathfindToPose(...) instead of AutoBuilder's.)
+    SmartDashboard.putData("Pathfind to Pickup Pos", ReactivePathing.pathfindToPose(
       new Pose2d(14.0, 6.5, Rotation2d.fromDegrees(0)), 
       new PathConstraints(
         4.0, 4.0, 
@@ -127,7 +129,7 @@ public class RobotContainer {
       ), 
       0
     ));
-    SmartDashboard.putData("Pathfind to Scoring Pos", AutoBuilder.pathfindToPose(
+    SmartDashboard.putData("Pathfind to Scoring Pos", ReactivePathing.pathfindToPose(
       new Pose2d(2.15, 3.0, Rotation2d.fromDegrees(180)), 
       new PathConstraints(
         4.0, 4.0, 
@@ -159,7 +161,7 @@ public class RobotContainer {
       // Prevent this path from being flipped on the red alliance, since the given positions are already correct
       path.preventFlipping = true;
 
-      AutoBuilder.followPath(path).schedule();
+      CommandScheduler.getInstance().schedule(AutoBuilder.followPath(path));
     }));
   }
 

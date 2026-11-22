@@ -2,6 +2,22 @@
 
 Each version's notes show in the app under **What's new**, and on its GitHub release.
 
+## 2.0.0
+
+- Changed: the robot code now uses the **official PathplannerLib**. The modified library (PathplannerLib-BackupPaths) is replaced by two small libraries:
+  - **Reactive Autonomous Pathing** runs the regions on the robot. Set it up by changing `AutoBuilder.configure(...)` to `ReactivePathing.configure(...)`, with the same arguments.
+  - **Mercury Vision** is the camera library: Limelight, PhotonVision or any camera. It works on its own too, with no PathPlanner.
+- New: robot code is written in simple Java that is easy to read, with a step-by-step path command you can follow on the dashboard (`Reactive Pathing/Step`).
+- New: after waiting or a pickup, the rest of the path keeps its event markers, rotation targets, slow zones and point towards zones.
+- New: mirrored autos mirror their regions, pickup zones and divert paths too.
+- New: one camera can see both robots and game pieces.
+- New: autos can run your intake alongside a path with regions. During a pickup, the intake command is started on its own and only when nothing else is running the intake.
+- Fixed: a region that ends at the very end of a path now reacts.
+- Fixed: on a path that comes back near itself, the robot no longer mixes up the way out and the way back.
+- Changed: a camera with no classes set gives a warning, since it never sees robots or game pieces.
+- Changed: the app tells you when a robot project still uses the 1.x library, and what to do.
+- Upgrading from 1.x: see "Upgrading from 1.x" in the README. Your paths and autos don't change.
+
 ## 1.4.0
 
 - New: one simple setup for robot code. `BackupPaths.setup(pose, stop)`, then `BackupPaths.watchForRobots(camera)` and `BackupPaths.pickUpGamePieces(camera, intakeCommand, hasPiece, intakeSubsystem)`.

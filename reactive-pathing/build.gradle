@@ -1,0 +1,129 @@
+// Reactive Autonomous Pathing: makes PathPlanner autos react to cameras.
+// Build and test with:  ./gradlew build
+// Publish for a release: ./gradlew publish -PreleaseVersion=2.0.0   (writes to build/repo)
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'io.github.aarya470'
+version = project.findProperty('releaseVersion') ?: '0.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven { url = 'https://frcmaven.wpi.edu/artifactory/release' }
+    maven { url = 'https://3015rangerrobotics.github.io/pathplannerlib/repo' }
+    maven { url = 'https://aarya470.github.io/FRC-Robot-Vision/repo' }
+}
+
+def wpilibVersion = '2026.2.1'
+def pathplannerVersion = '2026.1.2'
+def mercuryVisionVersion = '1.0.0'
+
+def wpilibJava = [
+    "edu.wpi.first.wpilibj:wpilibj-java:$wpilibVersion",
+    "edu.wpi.first.wpimath:wpimath-java:$wpilibVersion",
+    "edu.wpi.first.wpiutil:wpiutil-java:$wpilibVersion",
+    "edu.wpi.first.wpiunits:wpiunits-java:$wpilibVersion",
+    "edu.wpi.first.ntcore:ntcore-java:$wpilibVersion",
+    "edu.wpi.first.hal:hal-java:$wpilibVersion",
+    "edu.wpi.first.wpinet:wpinet-java:$wpilibVersion",
+    "edu.wpi.first.wpilibNewCommands:wpilibNewCommands-java:$wpilibVersion",
+]
+
+// Which of WPILib's native library builds fits this computer
+def osName = System.getProperty('os.name').toLowerCase()
+def osArch = System.getProperty('os.arch').toLowerCase()
+def nativesClassifier
+def nativesFolder
+if (osName.contains('windows')) {
+    nativesClassifier = 'windowsx86-64'
+    nativesFolder = 'windows/x86-64'
+} else if (osName.contains('mac')) {
+    nativesClassifier = 'osxuniversal'
+    nativesFolder = 'osx/universal'
+} else if (osArch.contains('aarch64') || osArch.contains('arm64')) {
+    nativesClassifier = 'linuxarm64'
+    nativesFolder = 'linux/arm64'
+} else {
+    nativesClassifier = 'linuxx86-64'
+    nativesFolder = 'linux/x86-64'
+}
+
+configurations {
+    // WPILib's native libraries, so tests can run a real simulated robot
+    testNatives
+}
+
+dependencies {
+    // Teams install these themselves, so they are not bundled
+    wpilibJava.each { compileOnly it }
+    compileOnly "com.pathplanner.lib:PathplannerLib-java:$pathplannerVersion"
+    compileOnly "io.github.aarya470:MercuryVision-java:$mercuryVisionVersion"
+
+    wpilibJava.each { testImplementation it }
+    testImplementation "edu.wpi.first.cameraserver:cameraserver-java:$wpilibVersion"
+    testImplementation "edu.wpi.first.cscore:cscore-java:$wpilibVersion"
+    testImplementation "com.pathplanner.lib:PathplannerLib-java:$pathplannerVersion"
+    testImplementation "io.github.aarya470:MercuryVision-java:$mercuryVisionVersion"
+    testRuntimeOnly "org.ejml:ejml-simple:0.44.0"
+    testRuntimeOnly "com.fasterxml.jackson.core:jackson-annotations:2.19.2"
+    testRuntimeOnly "com.fasterxml.jackson.core:jackson-core:2.19.2"
+    testRuntimeOnly "com.fasterxml.jackson.core:jackson-databind:2.19.2"
+    testRuntimeOnly "us.hebi.quickbuf:quickbuf-runtime:1.4"
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.13.4'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.13.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // WPILib's native libraries for this computer, so the tests can run a simulated robot
+    ['hal:hal', 'wpiutil:wpiutil', 'ntcore:ntcore', 'wpinet:wpinet', 'wpimath:wpimath'].each {
+        testNatives "edu.wpi.first.$it-cpp:$wpilibVersion:$nativesClassifier@zip"
+    }
+}
+
+def nativesDir = layout.buildDirectory.dir("natives/$nativesFolder/shared")
+
+tasks.register('extractTestNatives', Copy) {
+    from { configurations.testNatives.collect { zipTree(it) } }
+    into layout.buildDirectory.dir('natives')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+test {
+    useJUnitPlatform()
+    dependsOn 'extractTestNatives'
+    def path = nativesDir.get().asFile.absolutePath
+    systemProperty 'java.library.path', path
+    environment 'LD_LIBRARY_PATH', path
+    environment 'DYLD_LIBRARY_PATH', path
+    environment 'PATH', path + File.pathSeparator + System.getenv('PATH')
+    // The robot simulation tests use one shared WPILib, so run them one at a time
+    maxParallelForks = 1
+    forkEvery = 0
+}
+
+javadoc {
+    options.addStringOption('Xdoclint:none', '-quiet')
+    failOnError = false
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = 'ReactiveAutonomousPathing-java'
+            from components.java
+        }
+    }
+    repositories {
+        maven { url = layout.buildDirectory.dir('repo') }
+    }
+}

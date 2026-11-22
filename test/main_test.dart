@@ -27,9 +27,9 @@ void main() {
 
     when(updateChecker.isGuiUpdateAvailable(any))
         .thenAnswer((_) => Future.value(false));
-    when(updateChecker.isPPLibUpdateAvailable(
+    when(updateChecker.checkRobotLibrary(
             projectDir: anyNamed('projectDir'), fs: anyNamed('fs')))
-        .thenAnswer((_) => Future.value(false));
+        .thenAnswer((_) => Future.value(RobotLibraryUpdate.none));
 
     await widgetTester.pumpWidget(PathPlanner(
       appVersion: '2077.1.0',

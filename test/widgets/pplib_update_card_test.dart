@@ -13,17 +13,16 @@ import 'pplib_update_card_test.mocks.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('pplib update card', (widgetTester) async {
+  Future<void> showCard(
+      WidgetTester widgetTester, RobotLibraryUpdate update) async {
     FlutterError.onError = ignoreOverflowErrors;
 
     var updateChecker = MockUpdateChecker();
-
-    when(updateChecker.isPPLibUpdateAvailable(
+    when(updateChecker.checkRobotLibrary(
             projectDir: anyNamed('projectDir'), fs: anyNamed('fs')))
-        .thenAnswer((realInvocation) => Future.value(true));
+        .thenAnswer((realInvocation) => Future.value(update));
 
     var fs = MemoryFileSystem();
-
     await widgetTester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: PPLibUpdateCard(
@@ -33,18 +32,40 @@ void main() {
         ),
       ),
     ));
+  }
+
+  testWidgets('pplib update card', (widgetTester) async {
+    await showCard(widgetTester, RobotLibraryUpdate.newerVersion);
 
     // Card initially hidden
-    expect(find.text('PathPlannerLib update available!'), findsNothing);
+    expect(find.text('Robot library update available!'), findsNothing);
 
     await widgetTester.pumpAndSettle();
 
-    expect(find.text('PathPlannerLib update available!'), findsOneWidget);
+    expect(find.text('Robot library update available!'), findsOneWidget);
     expect(find.text('Dismiss'), findsOneWidget);
 
     await widgetTester.tap(find.text('Dismiss'));
     await widgetTester.pumpAndSettle();
 
-    expect(find.text('PathPlannerLib update available!'), findsNothing);
+    expect(find.text('Robot library update available!'), findsNothing);
+  });
+
+  testWidgets('pplib update card tells 1.x projects what to do',
+      (widgetTester) async {
+    await showCard(widgetTester, RobotLibraryUpdate.oldLibrary);
+    await widgetTester.pumpAndSettle();
+
+    expect(find.textContaining('uses the 1.x robot library'), findsOneWidget);
+    expect(
+        find.textContaining('PathplannerLib-BackupPaths.json'), findsOneWidget);
+  });
+
+  testWidgets('pplib update card stays hidden when up to date',
+      (widgetTester) async {
+    await showCard(widgetTester, RobotLibraryUpdate.none);
+    await widgetTester.pumpAndSettle();
+
+    expect(find.text('Dismiss'), findsNothing);
   });
 }

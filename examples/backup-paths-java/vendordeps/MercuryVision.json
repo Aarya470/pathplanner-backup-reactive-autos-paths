@@ -1,0 +1,20 @@
+{
+    "fileName": "MercuryVision.json",
+    "name": "MercuryVision",
+    "version": "1.0.0",
+    "uuid": "50204a77-2ba9-4771-92b3-6e5c6cfebc4c",
+    "frcYear": "2026",
+    "mavenUrls": [
+        "https://aarya470.github.io/FRC-Robot-Vision/repo"
+    ],
+    "jsonUrl": "https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json",
+    "javaDependencies": [
+        {
+            "groupId": "io.github.aarya470",
+            "artifactId": "MercuryVision-java",
+            "version": "1.0.0"
+        }
+    ],
+    "jniDependencies": [],
+    "cppDependencies": []
+}

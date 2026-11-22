@@ -127,7 +127,7 @@ jobs:
 
   lib:
     needs: version
-    name: Robot library (vendordep)
+    name: Reactive Autonomous Pathing (vendordep)
     runs-on: ubuntu-22.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -139,42 +139,69 @@ jobs:
           java-version: '17'
           distribution: 'zulu'
 
-      - name: Set library version
-        working-directory: ./pathplannerlib
-        run: sed -i "s/def pubVersion = '0.0.0'/def pubVersion = '${VERSION}'/" publish.gradle
+      # Build Mercury Vision from its release tag, so this works even before it is on GitHub Pages
+      - name: Find the Mercury Vision version
+        id: mv
+        run: echo "version=$(sed -n "s/^def mercuryVisionVersion = '\(.*\)'/\1/p" reactive-pathing/build.gradle)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and publish to local Maven folder
-        working-directory: ./pathplannerlib
+      - uses: actions/checkout@v6
+        with:
+          repository: Aarya470/FRC-Robot-Vision
+          ref: v${{ steps.mv.outputs.version }}
+          path: mercury-vision-src
+
+      - name: Build Mercury Vision locally
+        working-directory: ./mercury-vision-src
         run: |
           chmod +x gradlew
-          ./gradlew publishJavaPublicationToMavenRepository -PreleaseMode
+          ./gradlew publishToMavenLocal -PreleaseVersion=${{ steps.mv.outputs.version }}
+
+      - name: Build, test and publish to a local folder
+        working-directory: ./reactive-pathing
+        run: |
+          chmod +x gradlew
+          ./gradlew build publish -PreleaseVersion=${VERSION}
 
       - name: Make vendordep site
         run: |
           mkdir -p site/repo
-          cp -r pathplannerlib/build/repos/releases/. site/repo/
-          cat > site/PathplannerLib-BackupPaths.json <<JSON
+          cp -r reactive-pathing/build/repo/. site/repo/
+          cat > site/ReactiveAutonomousPathing.json <<JSON
           {
-              "fileName": "PathplannerLib-BackupPaths.json",
-              "name": "PathplannerLib-BackupPaths",
+              "fileName": "ReactiveAutonomousPathing.json",
+              "name": "ReactiveAutonomousPathing",
               "version": "${VERSION}",
-              "uuid": "3d6a28a7-468a-4c75-afd7-ccf2a78e3135",
+              "uuid": "592248b3-9c0a-4ccc-adf7-10f6f0189a04",
               "frcYear": "2026",
               "mavenUrls": [
                   "${SITE_URL}/repo"
               ],
-              "jsonUrl": "${SITE_URL}/PathplannerLib-BackupPaths.json",
-              "conflictsWith": [
+              "jsonUrl": "${SITE_URL}/ReactiveAutonomousPathing.json",
+              "requires": [
                   {
                       "uuid": "1b42324f-17c6-4875-8e77-1c312bc8c786",
-                      "errorMessage": "PathplannerLib-BackupPaths replaces PathplannerLib. Remove PathplannerLib from vendordeps first.",
-                      "offlineFileName": "PathplannerLib.json"
+                      "errorMessage": "Reactive Autonomous Pathing needs PathplannerLib. Install it too.",
+                      "offlineFileName": "PathplannerLib.json",
+                      "onlineUrl": "https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json"
+                  },
+                  {
+                      "uuid": "50204a77-2ba9-4771-92b3-6e5c6cfebc4c",
+                      "errorMessage": "Reactive Autonomous Pathing needs Mercury Vision. Install it too.",
+                      "offlineFileName": "MercuryVision.json",
+                      "onlineUrl": "https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json"
+                  }
+              ],
+              "conflictsWith": [
+                  {
+                      "uuid": "3d6a28a7-468a-4c75-afd7-ccf2a78e3135",
+                      "errorMessage": "PathplannerLib-BackupPaths is replaced by PathplannerLib + Reactive Autonomous Pathing. Remove PathplannerLib-BackupPaths first.",
+                      "offlineFileName": "PathplannerLib-BackupPaths.json"
                   }
               ],
               "javaDependencies": [
                   {
                       "groupId": "io.github.aarya470",
-                      "artifactId": "PathplannerLibBackupPaths-java",
+                      "artifactId": "ReactiveAutonomousPathing-java",
                       "version": "${VERSION}"
                   }
               ],
@@ -182,7 +209,7 @@ jobs:
               "cppDependencies": []
           }
           JSON
-          python3 -m json.tool site/PathplannerLib-BackupPaths.json > /dev/null
+          python3 -m json.tool site/ReactiveAutonomousPathing.json > /dev/null
           cat > site/index.html <<HTML
           <!DOCTYPE html>
           <html><head><meta charset="utf-8">
@@ -190,11 +217,11 @@ jobs:
           <title>PathPlanner Backup Paths</title></head>
           <body><a href="https://github.com/${GITHUB_REPOSITORY}/releases/latest">Download PathPlanner Backup Paths</a></body></html>
           HTML
-          cp site/PathplannerLib-BackupPaths.json .
+          cp site/ReactiveAutonomousPathing.json .
 
       - name: Zip example robot project
         run: |
-          sed -i -E "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/g" examples/backup-paths-java/vendordeps/PathplannerLib-BackupPaths.json
+          sed -i -E "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/g" examples/backup-paths-java/vendordeps/ReactiveAutonomousPathing.json
           mkdir -p example
           cd examples
           zip -qr "../example/PathPlannerBackupPaths-v${VERSION}-ExampleRobot.zip" backup-paths-java -x "*/build/*" "*/.gradle/*"
@@ -212,7 +239,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: vendordep
-          path: PathplannerLib-BackupPaths.json
+          path: ReactiveAutonomousPathing.json
 
   publish:
     needs: [version, app, lib]
@@ -255,11 +282,13 @@ jobs:
           body += "- **Windows:** `-Windows-setup.exe` (installer, updates itself from inside the app) or `-Windows-portable.zip`\n"
           body += "- **macOS:** `-macOS.zip`. The app is unsigned, so the first time, right-click it and choose **Open**.\n"
           body += "- **Linux:** `-Linux.tar.gz`, then run `./pathplanner` from the extracted folder.\n\n"
-          body += "## Robot library (Java)\n\n"
-          body += "In WPILib VS Code, run **WPILib: Manage Vendor Libraries > Install new libraries (online)** and paste:\n\n"
-          body += "```\n" + site + "/PathplannerLib-BackupPaths.json\n```\n\n"
-          body += "Remove `PathplannerLib.json` from your `vendordeps` folder first. To update later, use **Check for updates (online)**.\n\n"
-          body += "**Example robot project:** `-ExampleRobot.zip` shows how to connect a PhotonVision detection camera to the regions.\n"
+          body += "## Robot code (Java)\n\n"
+          body += "Your robot code uses the official **PathplannerLib**, plus two small libraries. In WPILib VS Code, run **WPILib: Manage Vendor Libraries > Install new libraries (online)** for each:\n\n"
+          body += "1. PathplannerLib: `https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json`\n"
+          body += "2. Mercury Vision (cameras): `https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json`\n"
+          body += "3. Reactive Autonomous Pathing (regions): `" + site + "/ReactiveAutonomousPathing.json`\n\n"
+          body += "Coming from 1.x? Remove `PathplannerLib-BackupPaths.json` from `vendordeps` first. The README has the upgrade steps.\n\n"
+          body += "**Example robot project:** `-ExampleRobot.zip` shows the whole setup.\n"
           open("release-notes.md", "w", encoding="utf-8").write(body)
           PY2
 

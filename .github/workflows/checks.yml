@@ -37,15 +37,35 @@ jobs:
         run: flutter test
 
   lib:
-    name: Robot library - test
+    name: Reactive Autonomous Pathing - test
     runs-on: ubuntu-22.04
-    container: wpilib/ubuntu-base:22.04
     steps:
       - uses: actions/checkout@v6
 
-      - name: Test
-        working-directory: ./pathplannerlib
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
+      # Build Mercury Vision from its release tag, so this works even before it is on GitHub Pages
+      - name: Find the Mercury Vision version
+        id: mv
+        run: echo "version=$(sed -n "s/^def mercuryVisionVersion = '\(.*\)'/\1/p" reactive-pathing/build.gradle)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: Aarya470/FRC-Robot-Vision
+          ref: v${{ steps.mv.outputs.version }}
+          path: mercury-vision-src
+
+      - name: Build Mercury Vision locally
+        working-directory: ./mercury-vision-src
         run: |
           chmod +x gradlew
-          # Java tests only. The C++ test program isn't needed for this Java library.
-          ./gradlew test -PskipNativeTests -PreleaseMode
+          ./gradlew publishToMavenLocal -PreleaseVersion=${{ steps.mv.outputs.version }}
+
+      - name: Build and test
+        working-directory: ./reactive-pathing
+        run: |
+          chmod +x gradlew
+          ./gradlew build

@@ -4,7 +4,7 @@
 
 package frc.robot.subsystems;
 
-import com.pathplanner.lib.auto.AutoBuilder;
+import com.mercury1089.reactivepathing.ReactivePathing;
 import com.pathplanner.lib.config.RobotConfig;
 import com.pathplanner.lib.controllers.PPHolonomicDriveController;
 import com.pathplanner.lib.util.PathPlannerLogging;
@@ -53,8 +53,9 @@ public class SwerveSubsystem extends SubsystemBase {
     try{
       RobotConfig config = RobotConfig.fromGUISettings();
 
-      // Configure AutoBuilder
-      AutoBuilder.configure(
+      // Set up path following. This is AutoBuilder.configure(...) with the same arguments, from
+      // Reactive Autonomous Pathing, so paths with regions can react to the cameras.
+      ReactivePathing.configure(
         this::getPose, 
         this::resetPose, 
         this::getSpeeds, 
@@ -78,7 +79,7 @@ public class SwerveSubsystem extends SubsystemBase {
         this
       );
     }catch(Exception e){
-      DriverStation.reportError("Failed to load PathPlanner config and configure AutoBuilder", e.getStackTrace());
+      DriverStation.reportError("Failed to load PathPlanner config and set up path following", e.getStackTrace());
     }
 
     // Set up custom logging to add the current path to a field 2d widget

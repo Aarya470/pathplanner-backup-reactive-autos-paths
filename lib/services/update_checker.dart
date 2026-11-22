@@ -10,7 +10,7 @@ import 'package:http/http.dart' as http;
 class UpdateChecker {
   final GitHub _github;
   static const String _jsonURL =
-      'https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/PathplannerLib-BackupPaths.json';
+      'https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/ReactiveAutonomousPathing.json';
 
   UpdateChecker() : _github = GitHub();
 
@@ -55,10 +55,22 @@ class UpdateChecker {
     return null;
   }
 
-  Future<bool> isPPLibUpdateAvailable(
+  /// Checks the robot project's robot library.
+  ///
+  /// Returns [RobotLibraryUpdate.oldLibrary] if the project still uses the 1.x library
+  /// (PathplannerLib-BackupPaths), which 2.0 replaced, [RobotLibraryUpdate.newerVersion] if its
+  /// Reactive Autonomous Pathing is older than the latest release, and otherwise
+  /// [RobotLibraryUpdate.none].
+  Future<RobotLibraryUpdate> checkRobotLibrary(
       {required Directory projectDir, required FileSystem fs}) async {
-    File vendorDepFile = fs.file(
+    File oldLibraryFile = fs.file(
         join(projectDir.path, 'vendordeps', 'PathplannerLib-BackupPaths.json'));
+    if (await oldLibraryFile.exists()) {
+      return RobotLibraryUpdate.oldLibrary;
+    }
+
+    File vendorDepFile = fs.file(
+        join(projectDir.path, 'vendordeps', 'ReactiveAutonomousPathing.json'));
 
     if (await vendorDepFile.exists()) {
       String fileContent = await vendorDepFile.readAsString();
@@ -72,16 +84,28 @@ class UpdateChecker {
         String remoteVersion = remoteJson['version'];
 
         Log.verbose(
-            'Current PPLib Version: $localVersion, Latest Release: $remoteVersion');
+            'Current Reactive Autonomous Pathing Version: $localVersion, Latest Release: $remoteVersion');
 
         if (Version.parse(remoteVersion) > Version.parse(localVersion)) {
-          return true;
+          return RobotLibraryUpdate.newerVersion;
         }
       } catch (e) {
         // Can't get file. Probably not connected to internet
       }
     }
 
-    return false;
+    return RobotLibraryUpdate.none;
   }
+}
+
+/// What the robot project's robot library needs, from [UpdateChecker.checkRobotLibrary].
+enum RobotLibraryUpdate {
+  /// Nothing: it is up to date, or the project doesn't use it
+  none,
+
+  /// A newer Reactive Autonomous Pathing is out
+  newerVersion,
+
+  /// The project still uses the 1.x library, PathplannerLib-BackupPaths
+  oldLibrary,
 }

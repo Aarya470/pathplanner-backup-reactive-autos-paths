@@ -1,15 +1,24 @@
 # PathPlanner Backup Paths
 
-A fork of [PathPlanner](https://github.com/mjansen4857/pathplanner) for FRC that adds **backup paths**: regions on a path that watch for robots or game pieces and change what your robot does in autonomous, on the fly.
+A fork of the [PathPlanner](https://github.com/mjansen4857/pathplanner) editor for FRC that adds **regions**: parts of a path that watch for robots or game pieces and change what your robot does in autonomous, on the fly.
 
-Made by Aaryan Roy on FRC Team 1089. This is not an official PathPlanner release and is not affiliated with the PathPlanner project.
+Made by Aaryan Roy on FRC Team 1089 Mercury. This is not an official PathPlanner release and is not affiliated with the PathPlanner project.
 
-## What it adds
+## The three pieces
 
-- **Robot in the way regions.** Draw a region on a path. If a robot is detected there, your robot waits, diverts onto a backup path you draw from the region edge, or continues.
-- **Game piece regions.** If a game piece is seen inside the region's orange **pickup zone** while the robot is in the region, the robot drives to it with the intake running, then rejoins the main path or follows a divert path. Drag the zone's 4 corners on the field to shape it.
-- **Both alliances are detected.** Teammates and opponents can both trigger a region.
-- **Works with any camera.** Limelight and PhotonVision are built in, and any other camera works if it can give angles or field positions. Setup is a few lines.
+| Piece | What it is | Where it runs |
+| --- | --- | --- |
+| **PathPlanner Backup Paths** (this app) | The path editor: paths, autos, and the regions and pickup zones on them | Your laptop |
+| **Reactive Autonomous Pathing** (in `reactive-pathing/`) | Makes autos react to the regions you drew | The robot |
+| **[Mercury Vision](https://github.com/Aarya470/FRC-Robot-Vision)** | The camera library: sees robots and game pieces with a Limelight, PhotonVision or any camera | The robot |
+
+Your robot code uses the **official PathplannerLib**, like every other team. The other two libraries are small add-ons. Mercury Vision works on its own too, with no PathPlanner at all.
+
+## What regions do
+
+- **Robot in the way.** If a robot is seen in the region, your robot waits, diverts onto a backup path you drew, or keeps going.
+- **Game piece.** If a game piece is seen inside the region's orange **pickup zone**, the robot drives to it with the intake running, then goes back to the path (or diverts). Drag the zone's 4 corners on the field to shape it.
+- **Teammates and opponents.** A region can count any robot, only opponents, or only teammates.
 - Everything else works like normal PathPlanner.
 
 ## Download the editor
@@ -22,86 +31,159 @@ Go to [Releases](../../releases/latest) and download the file for your laptop:
 | macOS | `...-macOS.zip` | Unzip and drag to Applications. The app is unsigned, so the first time, right-click it and choose **Open**. |
 | Linux | `...-Linux.tar.gz` | Extract it and run `./pathplanner`. |
 
-It installs separately from regular PathPlanner, so you can keep both.
+It installs separately from regular PathPlanner, so you can keep both. Edit your paths with this app: if the official PathPlanner app saves a path, it drops the regions.
 
-## Add the robot library (Java)
+## Set up the robot code (Java)
 
-Your robot code needs the matching library for backup paths to run on the robot.
+### 1. Install three libraries
 
-1. Delete any `PathplannerLib*.json` (such as `PathplannerLib-2026.1.2.json`) from your robot project's `vendordeps` folder. This library replaces it.
-2. In WPILib VS Code, open the command palette and run **WPILib: Manage Vendor Libraries → Install new libraries (online)**.
-3. Paste:
-   ```
-   https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/PathplannerLib-BackupPaths.json
-   ```
+In WPILib VS Code, run **WPILib: Manage Vendor Libraries → Install new libraries (online)** for each:
 
-Your existing PathPlanner code keeps working: the classes are still in `com.pathplanner.lib`. Java only for now.
-
-## Set up cameras
-
-Add this to your `RobotContainer`, after `AutoBuilder.configure(...)` and before building any autos:
-
-```java
-import com.pathplanner.lib.BackupPaths;
-import com.pathplanner.lib.detection.Camera;
-
-// 1. How to find and stop the robot: your drivetrain's pose method and a method that stops it
-BackupPaths.setup(drivetrain::getPose, drivetrain::stop);
-
-// 2. A camera that sees robots, for "Robot in the way" regions
-BackupPaths.watchForRobots(
-    Camera.limelight("limelight-front")
-        .mountedAt(0.30, 0.0, 0.75, 15, 0)   // forward m, left m, height m, tilt down deg, facing deg
-        .redClasses(1).blueClasses(2));      // which model classes are red and blue robots
-
-// 3. A camera that sees game pieces, plus your intake, for "Game piece" regions
-BackupPaths.pickUpGamePieces(
-    Camera.limelight("limelight-intake").mountedAt(-0.35, 0.0, 0.45, 25, 180),
-    intake::intakeCommand,   // the command that runs the intake
-    intake::hasPiece,        // beam break, or null
-    intake);                 // the intake subsystem
-BackupPaths.intakeIsOnBack(); // only if it is
+```
+https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json
+https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json
+https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/ReactiveAutonomousPathing.json
 ```
 
-Steps 2 and 3 are each optional. Call them before `AutoBuilder.buildAutoChooser()` or any `new PathPlannerAuto(...)`: regions in autos built earlier are ignored (the Driver Station shows a warning).
+For PhotonVision cameras, also install [PhotonLib](https://docs.photonvision.org/en/latest/docs/programming/photonlib/adding-vendordep.html), with the same version as PhotonVision on your coprocessor.
 
-Measure `mountedAt` from the robot's center on the floor: forward and left in meters (negative = behind or right), the lens height, how far the camera is tilted down, and which way it faces (0 forward, 90 left, 180 back, -90 right). `examples/backup-paths-java/camera_check.py` works out the tilt from one tape measurement and checks distances.
+### 2. Swap one line in your drivetrain
 
-Which detections count: with `redClasses`/`blueClasses` set, only those classes count as robots. Without them, every class counts unless you use `onlyClasses(...)`. Use a separate `Camera` object for robots and for game pieces, each with its own classes. Two objects can read the same physical camera.
+Where you call `AutoBuilder.configure(...)`, call `ReactivePathing.configure(...)` instead, **with the same arguments**:
 
-### Pick your camera
+```java
+import com.mercury1089.reactivepathing.ReactivePathing;
 
-| Camera | Make it with | Needs |
-| --- | --- | --- |
-| Limelight (neural detector pipeline) | `Camera.limelight("limelight-name")` | nothing extra |
-| PhotonVision (object detection) | `Camera.photon("CameraName")` | the [PhotonLib](https://docs.photonvision.org/en/latest/docs/programming/photonlib/adding-vendordep.html) vendordep, same version as PhotonVision on the coprocessor. Calibrate the camera for better distances. |
-| Anything that gives angles | `Camera.fromAngles(() -> List.of(new CameraTarget(classId, tx, ty)))` | tx = degrees right of center, ty = degrees above center. Imports: `com.pathplanner.lib.detection.CameraTarget`, `java.util.List` |
-| Anything that gives field positions | `Camera.fromFieldPositions(() -> listOfTranslation2d)` | no `mountedAt` needed |
+ReactivePathing.configure(
+    this::getPose,
+    this::resetPose,
+    this::getSpeeds,
+    (speeds, feedforwards) -> driveRobotRelative(speeds),
+    new PPHolonomicDriveController(new PIDConstants(5, 0, 0), new PIDConstants(5, 0, 0)),
+    config,
+    () -> DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red,
+    this);
+```
 
-Optional settings on any camera: `onlyClasses(...)` to ignore other model classes, `targetHeight(m)` if your robots or pieces are much taller or shorter than usual (defaults: 0.4 m for robots, 0.08 m for pieces), `maxRange(m)` (8 m), `maxAge(s)` (0.25 s), and `minConfidence(c)` (0.5, PhotonVision only; set Limelight's threshold on its web page).
+Don't also keep your old `AutoBuilder.configure(...)` call: PathPlanner can only be configured once, and `ReactivePathing.configure(...)` does it for you. Autos, `AutoBuilder.buildAutoChooser()`, named commands and event markers all work as before.
 
-### Use a camera anywhere
+### 3. Give it your cameras and intake
 
-| Call | Gives |
+In `RobotContainer`, before building autos:
+
+```java
+import com.mercury1089.vision.Camera;
+
+Camera frontCamera = Camera.limelight("limelight-front")
+    .mountedAt(0.30, 0.0, 0.75, 15, 0)   // forward m, left m, height m, tilt down degrees, facing degrees
+    .redRobotClasses(1)
+    .blueRobotClasses(2);
+
+Camera intakeCamera = Camera.limelight("limelight-intake")
+    .mountedAt(-0.35, 0.0, 0.45, 25, 180)
+    .gamePieceClasses(0);
+
+ReactivePathing.watchForRobots(frontCamera);
+ReactivePathing.pickUpGamePieces(
+    intakeCamera,
+    intake::intakeCommand,   // the command that runs your intake
+    intake::hasPiece,        // your beam break, or null
+    intake);                 // your intake subsystem
+ReactivePathing.intakeIsOnBack();   // only if it is
+```
+
+During a pickup, your intake command runs while the robot heads for the piece and is stopped when it has it (or gives up). Autos that use the intake elsewhere (named commands, markers, parallel groups) work fine. If some other command outside the auto is using a subsystem your intake command needs, the intake isn't started, so that command isn't cancelled, and you get a warning.
+
+Each camera needs its class numbers set (`redRobotClasses`, `gamePieceClasses`, ...). A camera with none sees everything as "other", never as a robot or game piece, and you'll get a warning.
+
+Each part is optional: without a robot camera, robot regions just follow the path, and without a game piece camera, game piece regions just follow the path. One camera can do both, if its model sees both. See the [Mercury Vision README](https://github.com/Aarya470/FRC-Robot-Vision) for every camera option, and for using cameras outside of autos.
+
+### Other things you can use
+
+| Call | Does |
 | --- | --- |
-| `camera.seesSomething()` | `true` if it sees anything |
-| `camera.seesSomethingWithin(1.5)` | `true` if anything is within 1.5 m of the robot |
-| `camera.getClosest()` | an `Optional` with the closest sighting, e.g. `camera.getClosest().ifPresent(s -> s.distanceMeters())`. A sighting has `fieldPosition()`, `distanceMeters()`, `classId()`, `color()` |
-| `camera.getSightings()` | everything it sees |
-| `SmartDashboard.putData("Front camera", camera)` | its status (`OK`, `Wrong class ID 3`, `Not mounted`, ...), count and closest distance |
+| `ReactivePathing.pathfindToPose(pose, constraints)` | Drives to a pose. Use it instead of `AutoBuilder.pathfindToPose(...)`, which doesn't work after `ReactivePathing.configure(...)` |
+| `ReactivePathing.pathfindToPoseFlipped(bluePose, constraints)` | The same, for a pose on the blue side, flipped when you are red. Use it instead of `AutoBuilder.pathfindToPoseFlipped(...)` |
+| `ReactivePathing.pathfindThenFollowPath(path, constraints)` | Drives to a path's start, then follows it. Use it instead of `AutoBuilder.pathfindThenFollowPath(...)` |
+| `ReactivePathing.followPathNormally(path)` | Follows a path with no reacting, like `AutoBuilder.followPath(...)` |
+| `ReactivePathing.setSwitches(allowDivert, allowWait, allowPickups)` | Turns parts off, for example from dashboard choosers |
+| `ReactivePathing.overrideDivertPath(() -> path)` | Diverts onto this path instead of each region's own |
 
-Optional switches, for example from dashboard choosers: `BackupPaths.setSwitches(allowDivert, allowWait, allowPickups)`, each a `BooleanSupplier` (null = always on).
+While a path with regions runs, the dashboard shows `Reactive Pathing/Step`: following the path, waiting for a robot, picking up, going back to the path, or diverting.
 
-The full example is in [`examples/backup-paths-java`](examples/backup-paths-java), also attached to each release as `...-ExampleRobot.zip`. Code written for 1.2 and 1.3 (`PhotonRobotDetector`, `ObstacleSettings.configure`, ...) still works.
+Good to know:
+
+- When the robot leaves the path (to pick up, or to wait and resume), it follows the rest of the path from where it joins. Event markers on the part it skipped don't run.
+- The first pathfinding of a robot program is slow while Java warms up. Schedule `PathfindingCommand.warmupCommand()` in `robotInit()` so it isn't your auto.
+- Choreo paths and paths made in code have no regions, so they run like normal PathPlanner paths.
+
+The full example is in [`examples/backup-paths-java`](examples/backup-paths-java), also attached to each release as `...-ExampleRobot.zip`.
+
+## Upgrading from 1.x
+
+1.x used a modified PathplannerLib (`PathplannerLib-BackupPaths`). 2.0 uses the official one, plus two small libraries.
+
+1. Delete `vendordeps/PathplannerLib-BackupPaths.json`.
+2. Install the three libraries above.
+3. Change `AutoBuilder.configure(...)` to `ReactivePathing.configure(...)`, with the same arguments. Don't keep the old call.
+4. Delete `BackupPaths.setup(...)`. `configure(...)` does that job now.
+5. Change `BackupPaths.watchForRobots(...)`, `pickUpGamePieces(...)`, `intakeIsOnBack()`, `setSwitches(...)` and `overrideDivertPath(...)` to `ReactivePathing.` with the same name and arguments.
+6. Change the pathfinding calls: `AutoBuilder.pathfindToPose(...)`, `pathfindToPoseFlipped(...)` and `pathfindThenFollowPath(...)` become `ReactivePathing.` with the same name.
+7. Update the imports:
+   ```java
+   import com.mercury1089.reactivepathing.ReactivePathing;   // was com.pathplanner.lib.BackupPaths
+   import com.mercury1089.vision.Camera;                      // was com.pathplanner.lib.detection.Camera
+   import com.mercury1089.vision.Sighting;                    // was com.pathplanner.lib.detection.Sighting
+   import com.mercury1089.vision.TeamColor;                   // was com.pathplanner.lib.obstacle.AllianceColor
+   ```
+8. Update the cameras:
+
+   | 1.x | 2.0 |
+   | --- | --- |
+   | `Camera.photon(name)` | `Camera.photonVision(name)` |
+   | `Camera.fromFieldPositions(positions)` | `Camera.fromFieldPositions(ThingType.ROBOT, positions)` (or `ThingType.GAME_PIECE`) |
+   | `redClasses(...)`, `blueClasses(...)` | `redRobotClasses(...)`, `blueRobotClasses(...)` |
+   | `onlyClasses(...)` | `robotClasses(...)` or `gamePieceClasses(...)` |
+   | `targetHeight(m)`, `setDefaultTargetHeight(m)` | `robotHeight(m)` and `gamePieceHeight(m)` |
+   | `maxRange(m)` | `maxDistance(m)` |
+   | `getClosest()` gave an `Optional` | `getClosest()` gives a `Sighting`, or `null` |
+   | `getObstacles()` gave `List<Obstacle>` | `getRobots()` gives `List<Sighting>` |
+   | `getGamePieces()` gave `List<GamePiece>` | `getGamePieces()` gives `List<Sighting>` |
+   | `sighting.fieldPosition()`, `distanceMeters()`, `classId()`, `color()`, `timestampSeconds()` | `getFieldPosition()`, `getDistanceMeters()`, `getClassId()`, `getColor()`, `getTimestampSeconds()` |
+   | `AllianceColor.RED` / `BLUE` | `TeamColor.RED` / `BLUE` / `UNKNOWN` |
+   | `PhotonRobotDetector`, `PhotonGamePieceDetector`, `RobotDetector` | `Camera.photonVision(...)` with `robotClasses(...)` / `gamePieceClasses(...)` |
+
+9. **List your classes.** In 1.x, a camera with no classes counted everything. In 2.0 it sees everything as "other", which never counts as a robot or game piece. Add `robotClasses(...)` (or red/blue) and `gamePieceClasses(...)`.
+
+Your paths and autos don't change.
 
 ## Making a new release (maintainers)
 
-```
-git tag v1.0.1
-git push origin v1.0.1
-```
+1. Add a `## X.Y.Z` section to `CHANGELOG.md`.
+2. Tag and push:
+   ```
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
 
-GitHub Actions builds Windows, macOS and Linux, publishes the vendordep to GitHub Pages, and creates the release.
+GitHub Actions builds the app for Windows, macOS and Linux, tests and publishes Reactive Autonomous Pathing to GitHub Pages, and creates the release.
+
+### The first time only (2.0.0)
+
+Reactive Autonomous Pathing is built against Mercury Vision, so Mercury Vision has to be published first:
+
+1. Create the GitHub repo `Aarya470/FRC-Robot-Vision`, push it, and push its tag `v1.0.0`.
+2. In that repo's **Settings > Pages**, set the source to **Deploy from a branch**, branch `gh-pages`, folder `/ (root)`.
+3. Check that https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json opens.
+4. Then push this repo's tag `v2.0.0`. Do the same Pages setting here if it isn't on yet.
+
+The library checks in this repo's CI build Mercury Vision from its `vX.Y.Z` tag, so `Aarya470/FRC-Robot-Vision` must be public and have that tag before they pass.
+
+### Running the library tests on your computer
+
+`cd reactive-pathing` then `./gradlew build`. The tests run a simulated robot with WPILib's native libraries, which Gradle downloads for Linux, Windows or macOS automatically.
+
+Before Mercury Vision 1.0.0 is on GitHub Pages, build it into your computer's Maven folder first: in the FRC-Robot-Vision repo, run `./gradlew publishToMavenLocal -PreleaseVersion=1.0.0`.
 
 ## License and credit
 
