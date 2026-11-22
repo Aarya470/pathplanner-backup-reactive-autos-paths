@@ -10,7 +10,7 @@ import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.PathPlannerAuto;
 import com.pathplanner.lib.events.EventTrigger;
-import com.pathplanner.lib.obstacle.GamePieceSettings;
+import com.pathplanner.lib.detection.PhotonRobotDetector;
 import com.pathplanner.lib.obstacle.ObstacleSettings;
 import com.pathplanner.lib.path.GoalEndState;
 import com.pathplanner.lib.path.PathConstraints;
@@ -19,9 +19,6 @@ import com.pathplanner.lib.path.Waypoint;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
-import edu.wpi.first.wpilibj.DigitalInput;
-import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.util.Units;
@@ -31,15 +28,8 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
-import frc.robot.commands.BackupPathOptions;
-import frc.robot.sensors.DetectionCamera;
-import frc.robot.sensors.DetectionCameraConfig;
-import frc.robot.sensors.DetectionSource;
-import frc.robot.sensors.SimDetectionSource;
-import frc.robot.subsystems.Intake;
+import frc.robot.Constants.Detection;
 import frc.robot.subsystems.SwerveSubsystem;
-
-import java.util.function.BooleanSupplier;
 
 /**
  * This class is where the bulk of the robot should be declared. Since Command-based is a
@@ -50,7 +40,7 @@ import java.util.function.BooleanSupplier;
 public class RobotContainer {
   // The robot's subsystems and commands are defined here...
   private final SwerveSubsystem swerve = new SwerveSubsystem();
-  private final Intake intake = new Intake();
+  private PhotonRobotDetector detector;
 
   private final SendableChooser<Command> autoChooser;
 
@@ -64,7 +54,7 @@ public class RobotContainer {
     // Use event markers as triggers
     new EventTrigger("Example Marker").onTrue(Commands.print("Passed an event marker"));
 
-    // Backup paths and game piece pickups. Must run before the autos are built.
+    // Robot detection for backup paths. Must run before the autos are built.
     configureDetection();
 
     // Configure the trigger bindings
@@ -75,39 +65,14 @@ public class RobotContainer {
   }
 
   /**
-   * Connect the detection camera to path regions. Any path with regions in the PathPlanner Backup
-   * Paths editor uses it: robot regions for backup paths, game piece regions for pickups. In the
-   * simulator, a fake robot and a fake game piece placed from the dashboard replace the camera.
+   * Connect the robot detection camera. Any path with "robot in the way" regions in the PathPlanner
+   * Backup Paths editor then waits or diverts when a robot blocks it, and the detector can be used
+   * anywhere else in robot code too.
    */
   private void configureDetection() {
-    try {
-      DetectionCameraConfig config = DetectionCameraConfig.load();
-      DetectionSource source = RobotBase.isSimulation()
-          ? new SimDetectionSource(swerve::getPose)
-          : new DetectionCamera(config, swerve::getPose);
-
-      // Optional intake beam break: reads false when a piece blocks it. -1 in the config for none.
-      BooleanSupplier hasPiece = null;
-      if (config.intakeBeamBreakPort >= 0) {
-        DigitalInput beamBreak = new DigitalInput(config.intakeBeamBreakPort);
-        hasPiece = () -> !beamBreak.get();
-      }
-
-      ObstacleSettings.configure(
-          source, swerve::getPose, () -> swerve.driveRobotRelative(new ChassisSpeeds()), config.staleAfterSec);
-      GamePieceSettings.configure(
-          source,
-          intake::intake,
-          hasPiece,
-          config.intakeAfterArriveSec,
-          config.maxPickupSec,
-          config.intakeFacingDegrees,
-          intake);
-    } catch (Exception e) {
-      DriverStation.reportError(
-          "Detection camera config failed, path regions are off: " + e.getMessage(), false);
-    }
-    BackupPathOptions.install();
+    detector = new PhotonRobotDetector(
+        Detection.cameraName, Detection.robotToCamera, swerve::getPose, Detection.robotClassIds);
+    ObstacleSettings.configure(detector, swerve::getPose, () -> swerve.driveRobotRelative(new ChassisSpeeds()));
   }
 
   /**
@@ -120,6 +85,15 @@ public class RobotContainer {
    * joysticks}.
    */
   private void configureBindings() {
+    // Robot detection outside of autos: print when a robot is within 1.5 m in front of the camera
+    new Trigger(() -> detector.isRobotAhead(1.5)).onTrue(Commands.print("Robot ahead"));
+    SmartDashboard.putData("Detection", builder -> {
+      builder.addBooleanProperty("Robot Ahead", () -> detector.isRobotAhead(1.5), null);
+      builder.addDoubleProperty("Closest Distance", () -> detector.getClosestRobot().isPresent()
+          ? detector.getClosestRobot().get().getDistanceMeters() : -1, null);
+      builder.addStringProperty("Status", detector::getStatus, null);
+    });
+
     // Add a button to run the example auto to SmartDashboard, this will also be in the auto chooser built above
     SmartDashboard.putData("Example Auto", new PathPlannerAuto("Example Auto"));
 

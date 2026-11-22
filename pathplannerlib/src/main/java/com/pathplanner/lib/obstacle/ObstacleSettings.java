@@ -1,5 +1,6 @@
 package com.pathplanner.lib.obstacle;
 
+import com.pathplanner.lib.detection.RobotDetector;
 import com.pathplanner.lib.path.PathPlannerPath;
 import edu.wpi.first.math.geometry.Pose2d;
 import java.util.function.BooleanSupplier;
@@ -37,6 +38,19 @@ public final class ObstacleSettings {
     poseSupplier = pose;
     stopDrive = stop;
     ObstacleSettings.staleAfterSec = staleAfterSec;
+  }
+
+  /**
+   * Set up path regions with a {@link RobotDetector}, such as {@link
+   * com.pathplanner.lib.detection.PhotonRobotDetector}. Detections older than the detector's max
+   * age are ignored.
+   *
+   * @param detector finds robots on the field
+   * @param pose the robot pose from odometry
+   * @param stop stops the drivetrain. Called while the robot waits during a timeout.
+   */
+  public static void configure(RobotDetector detector, Supplier<Pose2d> pose, Runnable stop) {
+    configure((ObstacleSource) detector, pose, stop, detector.getMaxAgeSeconds());
   }
 
   /**
