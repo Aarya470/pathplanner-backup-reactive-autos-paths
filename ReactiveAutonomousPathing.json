@@ -1,0 +1,41 @@
+{
+    "fileName": "ReactiveAutonomousPathing.json",
+    "name": "ReactiveAutonomousPathing",
+    "version": "2.0.0",
+    "uuid": "592248b3-9c0a-4ccc-adf7-10f6f0189a04",
+    "frcYear": "2026",
+    "mavenUrls": [
+        "https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/repo"
+    ],
+    "jsonUrl": "https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/ReactiveAutonomousPathing.json",
+    "requires": [
+        {
+            "uuid": "1b42324f-17c6-4875-8e77-1c312bc8c786",
+            "errorMessage": "Reactive Autonomous Pathing needs PathplannerLib. Install it too.",
+            "offlineFileName": "PathplannerLib.json",
+            "onlineUrl": "https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json"
+        },
+        {
+            "uuid": "50204a77-2ba9-4771-92b3-6e5c6cfebc4c",
+            "errorMessage": "Reactive Autonomous Pathing needs Mercury Vision. Install it too.",
+            "offlineFileName": "MercuryVision.json",
+            "onlineUrl": "https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json"
+        }
+    ],
+    "conflictsWith": [
+        {
+            "uuid": "3d6a28a7-468a-4c75-afd7-ccf2a78e3135",
+            "errorMessage": "PathplannerLib-BackupPaths is replaced by PathplannerLib + Reactive Autonomous Pathing. Remove PathplannerLib-BackupPaths first.",
+            "offlineFileName": "PathplannerLib-BackupPaths.json"
+        }
+    ],
+    "javaDependencies": [
+        {
+            "groupId": "io.github.aarya470",
+            "artifactId": "ReactiveAutonomousPathing-java",
+            "version": "2.0.0"
+        }
+    ],
+    "jniDependencies": [],
+    "cppDependencies": []
+}

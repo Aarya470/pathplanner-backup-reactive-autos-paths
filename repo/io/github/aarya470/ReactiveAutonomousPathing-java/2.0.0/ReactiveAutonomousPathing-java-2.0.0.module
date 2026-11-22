@@ -1,0 +1,100 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.github.aarya470",
+    "module": "ReactiveAutonomousPathing-java",
+    "version": "2.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "ReactiveAutonomousPathing-java-2.0.0.jar",
+          "url": "ReactiveAutonomousPathing-java-2.0.0.jar",
+          "size": 36429,
+          "sha512": "973acea57ffaab62409125effb5ba987ecafdc9e057fbf73597054e010e3c8e5ae97fcea235f3a5c3f63e74e513b35436370ca074ef6b233492a4ee360531595",
+          "sha256": "8e96e86be607662f36532163ea258e64c4d3e590beed81ab36921583874e7d34",
+          "sha1": "747d6ca26efde10122d033c33e92a736ecec528c",
+          "md5": "32c2255698c9df3689965ef150206e9e"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ReactiveAutonomousPathing-java-2.0.0.jar",
+          "url": "ReactiveAutonomousPathing-java-2.0.0.jar",
+          "size": 36429,
+          "sha512": "973acea57ffaab62409125effb5ba987ecafdc9e057fbf73597054e010e3c8e5ae97fcea235f3a5c3f63e74e513b35436370ca074ef6b233492a4ee360531595",
+          "sha256": "8e96e86be607662f36532163ea258e64c4d3e590beed81ab36921583874e7d34",
+          "sha1": "747d6ca26efde10122d033c33e92a736ecec528c",
+          "md5": "32c2255698c9df3689965ef150206e9e"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ReactiveAutonomousPathing-java-2.0.0-sources.jar",
+          "url": "ReactiveAutonomousPathing-java-2.0.0-sources.jar",
+          "size": 22706,
+          "sha512": "10612aca95c61e69ef37c8e7b2698f62e01f3915edf34c8753cfa6ed5dfd236e210292aef9159f1ae187d7b41a66c50cd4d983f83c939b06318c6bbe2da6d23b",
+          "sha256": "efd4df02a98b7a34cb5b23f1a944d8f8d7822369d45b92c809cf83763a7befa1",
+          "sha1": "cdd2cbc51fe95494e558fd071076d625308c83a7",
+          "md5": "6487abc5a65965db74db0b92f555ff13"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ReactiveAutonomousPathing-java-2.0.0-javadoc.jar",
+          "url": "ReactiveAutonomousPathing-java-2.0.0-javadoc.jar",
+          "size": 127188,
+          "sha512": "8433af1793569e2bbafd5920312e8ec0c9915e060022777b999198654811275426cf588789c5c07b61e0859e1b3987afe4883861a207970cc13402883929dd76",
+          "sha256": "0a394e94be17c297a7d42e505c3a18c0c20a0d71ce24114360fa446f8b0d2f58",
+          "sha1": "c44e94b0f08dfefe57881aa856c4ab0fd15cd92f",
+          "md5": "d15a499914ef1568a7e122c481f208c1"
+        }
+      ]
+    }
+  ]
+}
