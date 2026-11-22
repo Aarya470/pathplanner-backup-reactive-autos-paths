@@ -2,6 +2,15 @@
 
 Each version's notes show in the app under **What's new**, and on its GitHub release.
 
+## 1.2.0
+
+- New: robot detection is built into the robot library. `PhotonRobotDetector` reads a PhotonVision object detection camera and reports robots on the field, so team robot code no longer needs its own camera code.
+- New: use it anywhere in robot code, not just in autos: `isRobotAhead(meters)`, `isRobotSeen()`, `getClosestRobot()`, with each robot's distance, direction and field position.
+- New: `ObstacleSettings.configure(detector, pose, stop)` connects the detector to path regions in one call.
+- New: other cameras can be used by implementing `RobotDetector`.
+- Changed: the example robot project uses the new detector. The dashboard toggles and fake test robot were removed from it.
+- Update the robot library to PathplannerLib-BackupPaths 1.2.0. Teams using `PhotonRobotDetector` also need the photonlib vendordep.
+
 ## 1.1.0
 
 - New: pickup zones for game piece regions. Choose **Inside a zone** on a game piece region, then drag the 4 corners of the orange zone on the field. While the robot is in that part of the path, any game piece seen inside the zone is picked up, and pieces outside it are ignored. Regions without a zone still use the max distance.
