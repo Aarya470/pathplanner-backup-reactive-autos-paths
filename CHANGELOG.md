@@ -2,6 +2,17 @@
 
 Each version's notes show in the app under **What's new**, and on its GitHub release.
 
+## 1.3.0
+
+- Fixed: the Path Regions list no longer closes when you add a region. The new region opens and is selected right away, so its part of the path shows on the field.
+- Changed: regions are easier to see. Every region shows as a yellow band on the path, and the selected or hovered one is thick and outlined, with a dot at each end.
+- Changed: game piece regions always use a pickup zone. The **Within a distance** option is gone. Choosing **Game piece** makes an orange zone around the region, and older paths get one when opened.
+- Changed: the 4 orange corner dots of every pickup zone always show on the field and can be dragged without opening the region first. A corner can be stretched up to about 3/4 of the region's length from the path (at least 1 m, at most 4 m).
+- New: the auto editor has **Normal / Pivot / Continue** views when its paths have regions. Pivot shows and simulates each path's pivot route, and Continue shows the robot waiting at regions with a block timeout.
+- New: `PhotonGamePieceDetector` in the robot library reads game pieces from a PhotonVision object detection camera, for game piece regions.
+- Changed: the example robot project wires up pickups with the new detector, tells red and blue robots apart, and has an updated README. PhotonLib on the robot must match the PhotonVision version on the coprocessor.
+- Update both the app and the robot library to PathplannerLib-BackupPaths 1.3.0.
+
 ## 1.2.0
 
 - New: robot detection is built into the robot library. `PhotonRobotDetector` reads a PhotonVision object detection camera and reports robots on the field, so team robot code no longer needs its own camera code.

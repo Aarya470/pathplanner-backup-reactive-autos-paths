@@ -8,6 +8,7 @@ import 'package:pathplanner/trajectory/trajectory.dart';
 import 'package:pathplanner/commands/command_groups.dart';
 import 'package:pathplanner/commands/path_command.dart';
 import 'package:pathplanner/path/event_marker.dart';
+import 'package:pathplanner/path/obstacle_region.dart';
 import 'package:pathplanner/path/pathplanner_path.dart';
 import 'package:pathplanner/path/rotation_target.dart';
 import 'package:pathplanner/util/prefs.dart';
@@ -214,5 +215,79 @@ void main() {
     await widgetTester.pump(const Duration(seconds: 1));
 
     expect(prefs.getDouble(PrefsKeys.editorTreeWeight), closeTo(0.5, 0.01));
+  });
+
+  testWidgets('switches between normal, pivot and continue views', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 720));
+    final pivot =
+        PathPlannerPath.defaultPath(pathDir: '/paths', fs: fs, name: 'pivot');
+    pivot.isNested = true;
+    pivot.waypoints.last.anchor = const Translation2d(2.0, 6.5);
+    testPath.obstacleRegions = [
+      ObstacleRegion(
+          startPos: 0.2,
+          endPos: 0.5,
+          blockTimeoutSec: 1.5,
+          action: RegionAction.divert,
+          divertPath: pivot),
+    ];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SplitAutoEditor(
+          prefs: prefs,
+          auto: auto,
+          autoPaths: [testPath],
+          autoChoreoPaths: const [],
+          allPathNames: const ['testPath'],
+          fieldImage: FieldImage.official(OfficialField.crescendo),
+          undoStack: undoStack,
+          onAutoChanged: () {},
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Normal'), findsOneWidget);
+    expect(find.text('Pivot'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+
+    PathPainter painter() =>
+        tester.widget<CustomPaint>(find.byWidgetPredicate((w) =>
+                w is CustomPaint && w.painter is PathPainter))
+            .painter as PathPainter;
+    final num normalTime = painter().simulatedPath!.getTotalTimeSeconds();
+    expect(painter().paths.single, same(testPath));
+
+    await tester.tap(find.text('Pivot'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(painter().paths.single, isNot(same(testPath)));
+    expect(painter().paths.single.waypoints.last.anchor,
+        const Translation2d(2.0, 6.5));
+
+    await tester.tap(find.text('Continue'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(painter().paths.single, same(testPath));
+    expect(painter().simulatedPath!.getTotalTimeSeconds(),
+        closeTo(normalTime + 1.5, 0.05));
+  });
+
+  testWidgets('no view selector without regions', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 720));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SplitAutoEditor(
+          prefs: prefs,
+          auto: auto,
+          autoPaths: [testPath],
+          autoChoreoPaths: const [],
+          allPathNames: const ['testPath'],
+          fieldImage: FieldImage.official(OfficialField.crescendo),
+          undoStack: undoStack,
+          onAutoChanged: () {},
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Pivot'), findsNothing);
   });
 }

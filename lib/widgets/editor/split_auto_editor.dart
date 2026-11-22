@@ -6,7 +6,9 @@ import 'package:pathplanner/services/log.dart';
 import 'package:pathplanner/trajectory/auto_simulator.dart';
 import 'package:pathplanner/trajectory/config.dart';
 import 'package:pathplanner/trajectory/trajectory.dart';
+import 'package:pathplanner/path/obstacle_region.dart';
 import 'package:pathplanner/path/pathplanner_path.dart';
+import 'package:pathplanner/path/pivot_route.dart';
 import 'package:pathplanner/util/prefs.dart';
 import 'package:pathplanner/widgets/dialogs/trajectory_render_dialog.dart';
 import 'package:pathplanner/widgets/editor/path_painter.dart';
@@ -51,6 +53,98 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
   late bool _treeOnRight;
   PathPlannerTrajectory? _simTraj;
   bool _paused = false;
+
+  /// 0 shows the normal paths, 1 the pivot routes, 2 the robot waiting then continuing
+  int _viewMode = 0;
+
+  /// The first region of a path that has a drawn diverge path
+  static ObstacleRegion? _pivotRegion(PathPlannerPath path) {
+    for (final r in path.obstacleRegions) {
+      if (r.action == RegionAction.divert &&
+          r.divertPath != null &&
+          r.divertPath!.waypoints.isNotEmpty) {
+        return r;
+      }
+    }
+    return null;
+  }
+
+  /// The first region of a path where the robot waits for a blocker before going on
+  static ObstacleRegion? _waitRegion(PathPlannerPath path) {
+    for (final r in path.obstacleRegions) {
+      if (r.trigger == RegionTrigger.robot && (r.blockTimeoutSec ?? 0) > 0) {
+        return r;
+      }
+    }
+    return null;
+  }
+
+  bool get _hasPivot =>
+      !widget.auto.choreoAuto &&
+      widget.autoPaths.any((p) => _pivotRegion(p) != null);
+
+  bool get _hasContinue =>
+      !widget.auto.choreoAuto &&
+      widget.autoPaths.any((p) => _waitRegion(p) != null);
+
+  /// The paths to draw and simulate for the chosen view. In Pivot view, every path with a
+  /// diverge path is replaced by its pivot route.
+  List<PathPlannerPath>? _pivotPaths;
+
+  List<PathPlannerPath> _shownPaths() {
+    if (_viewMode != 1) return widget.autoPaths;
+    return _pivotPaths ??= [
+      for (final p in widget.autoPaths)
+        if (_pivotRegion(p) case final ObstacleRegion r)
+          PivotRoute.build(p, r)
+        else
+          p,
+    ];
+  }
+
+  /// In Continue view, hold the robot still at the end of each waiting region
+  void _addWaits(PathPlannerTrajectory traj) {
+    if (_viewMode != 2) return;
+    int from = 0;
+    for (final p in widget.autoPaths) {
+      final r = _waitRegion(p);
+      if (r == null) continue;
+      from = insertWaitAt(
+          traj.states, p.samplePath(r.endPos), r.blockTimeoutSec!,
+          startIndex: from);
+    }
+  }
+
+  Widget _buildViewSelector() {
+    if (!_hasPivot && !_hasContinue) return const SizedBox.shrink();
+    if (_viewMode == 1 && !_hasPivot || _viewMode == 2 && !_hasContinue) {
+      _viewMode = 0;
+    }
+    return Positioned(
+      top: 8,
+      left: _treeOnRight ? 8 : null,
+      right: _treeOnRight ? null : 8,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: SegmentedButton<int>(
+            segments: [
+              const ButtonSegment(value: 0, label: Text('Normal')),
+              if (_hasPivot)
+                const ButtonSegment(value: 1, label: Text('Pivot')),
+              if (_hasContinue)
+                const ButtonSegment(value: 2, label: Text('Continue')),
+            ],
+            selected: {_viewMode},
+            onSelectionChanged: (choice) {
+              setState(() => _viewMode = choice.first);
+              _simulateAuto();
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
   late AnimationController _previewController;
 
@@ -103,7 +197,7 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
                     child: CustomPaint(
                         painter: PathPainter(
                             colorScheme: colorScheme,
-                            paths: widget.autoPaths,
+                            paths: _shownPaths(),
                             choreoPaths: widget.autoChoreoPaths,
                             simple: true,
                             hideOtherPathsOnHover: widget.prefs
@@ -212,12 +306,14 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
             ],
           ),
         ),
+        _buildViewSelector(),
       ],
     );
   }
 
   // Marked as async so it can run from initState
   void _simulateAuto() async {
+    _pivotPaths = null;
     if (widget.autoPaths.isEmpty && widget.autoChoreoPaths.isEmpty) {
       setState(() {
         _simTraj = null;
@@ -253,9 +349,10 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
 
       try {
         simPath = AutoSimulator.simulateAuto(
-          widget.autoPaths,
+          _shownPaths(),
           config,
         );
+        if (simPath != null) _addWaits(simPath);
         if (!(simPath?.getTotalTimeSeconds().isFinite ?? false)) {
           simPath = null;
         }

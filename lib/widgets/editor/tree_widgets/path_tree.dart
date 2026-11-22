@@ -286,7 +286,7 @@ class _PathTreeState extends State<PathTree> {
 
   Widget _buildObstacleRegionsTree() {
     return ObstacleRegionsTree(
-      key: ValueKey('regions${widget.path.obstacleRegions.length}'),
+      key: const ValueKey('regions'),
       path: widget.path,
       onPathChanged: widget.onPathChanged,
       onPathChangedNoSim: widget.onPathChangedNoSim,

@@ -10,7 +10,9 @@ import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.PathPlannerAuto;
 import com.pathplanner.lib.events.EventTrigger;
+import com.pathplanner.lib.detection.PhotonGamePieceDetector;
 import com.pathplanner.lib.detection.PhotonRobotDetector;
+import com.pathplanner.lib.obstacle.GamePieceSettings;
 import com.pathplanner.lib.obstacle.ObstacleSettings;
 import com.pathplanner.lib.path.GoalEndState;
 import com.pathplanner.lib.path.PathConstraints;
@@ -29,6 +31,7 @@ import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
 import frc.robot.Constants.Detection;
+import frc.robot.Constants.GamePieceDetection;
 import frc.robot.subsystems.SwerveSubsystem;
 
 /**
@@ -41,6 +44,7 @@ public class RobotContainer {
   // The robot's subsystems and commands are defined here...
   private final SwerveSubsystem swerve = new SwerveSubsystem();
   private PhotonRobotDetector detector;
+  private PhotonGamePieceDetector pieceDetector;
 
   private final SendableChooser<Command> autoChooser;
 
@@ -54,8 +58,9 @@ public class RobotContainer {
     // Use event markers as triggers
     new EventTrigger("Example Marker").onTrue(Commands.print("Passed an event marker"));
 
-    // Robot detection for backup paths. Must run before the autos are built.
+    // Robot and game piece detection for path regions. Must run before the autos are built.
     configureDetection();
+    configurePickups();
 
     // Configure the trigger bindings
     configureBindings();
@@ -70,9 +75,38 @@ public class RobotContainer {
    * anywhere else in robot code too.
    */
   private void configureDetection() {
+    int[] allRobots = new int[Detection.redRobotClassIds.length + Detection.blueRobotClassIds.length];
+    System.arraycopy(Detection.redRobotClassIds, 0, allRobots, 0, Detection.redRobotClassIds.length);
+    System.arraycopy(Detection.blueRobotClassIds, 0, allRobots, Detection.redRobotClassIds.length,
+        Detection.blueRobotClassIds.length);
+
     detector = new PhotonRobotDetector(
-        Detection.cameraName, Detection.robotToCamera, swerve::getPose, Detection.robotClassIds);
+        Detection.cameraName, Detection.robotToCamera, swerve::getPose, allRobots);
+    // Lets regions set to "opponents" or "teammates" tell the robots apart
+    detector.setAllianceClassIds(Detection.redRobotClassIds, Detection.blueRobotClassIds);
     ObstacleSettings.configure(detector, swerve::getPose, () -> swerve.driveRobotRelative(new ChassisSpeeds()));
+  }
+
+  /**
+   * Connect the game piece camera and the intake. Any path with "game piece" regions (like
+   * Pickup.path) then drives to a piece seen inside the region's orange zone, runs the intake, and
+   * rejoins the path.
+   */
+  private void configurePickups() {
+    pieceDetector = new PhotonGamePieceDetector(
+        GamePieceDetection.cameraName, GamePieceDetection.robotToCamera, swerve::getPose,
+        GamePieceDetection.pieceClassIds);
+    GamePieceSettings.configure(
+        pieceDetector,
+        // Replace with your intake's command, for example intake::runIntakeCommand
+        () -> Commands.print("Intake running").andThen(Commands.idle()),
+        // Replace with your intake's beam break, for example intake::hasPiece. With null, the pickup
+        // ends 0.3 s after reaching the piece.
+        null,
+        0.3, // seconds to keep the intake running after reaching the piece
+        3.0, // give up on a pickup after this long
+        GamePieceDetection.intakeFacingDeg);
+        // Add your intake subsystem here as the last argument
   }
 
   /**
@@ -92,6 +126,10 @@ public class RobotContainer {
       builder.addDoubleProperty("Closest Distance", () -> detector.getClosestRobot().isPresent()
           ? detector.getClosestRobot().get().getDistanceMeters() : -1, null);
       builder.addStringProperty("Status", detector::getStatus, null);
+    });
+    SmartDashboard.putData("Game Pieces", builder -> {
+      builder.addDoubleProperty("Seen", () -> pieceDetector.getGamePieces().size(), null);
+      builder.addStringProperty("Status", pieceDetector::getStatus, null);
     });
 
     // Add a button to run the example auto to SmartDashboard, this will also be in the auto chooser built above

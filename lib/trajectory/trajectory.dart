@@ -686,13 +686,17 @@ class SwerveModuleTrajState extends SwerveModuleState {
 }
 
 /// Hold a trajectory still at the point nearest [at] for [timeoutSec]. The state at that point
-/// is repeated [timeoutSec] later, and every later state moves back by the same amount.
-void insertWaitAt(List<TrajectoryState> states, Translation2d at, num timeoutSec) {
-  if (states.isEmpty || timeoutSec <= 0) return;
+/// is repeated [timeoutSec] later, and every later state moves back by the same amount. Only
+/// states from [startIndex] on are searched. Returns the index just after the wait.
+int insertWaitAt(List<TrajectoryState> states, Translation2d at, num timeoutSec,
+    {int startIndex = 0}) {
+  if (states.isEmpty || timeoutSec <= 0 || startIndex >= states.length) {
+    return startIndex;
+  }
 
-  int idx = 0;
+  int idx = startIndex;
   num best = double.infinity;
-  for (int i = 0; i < states.length; i++) {
+  for (int i = startIndex; i < states.length; i++) {
     final num d = states[i].pose.translation.getDistance(at);
     if (d < best) {
       best = d;
@@ -713,4 +717,5 @@ void insertWaitAt(List<TrajectoryState> states, Translation2d at, num timeoutSec
   }
   states.insert(idx + 1, stopNow);
   states.insert(idx + 2, stopLater);
+  return idx + 3;
 }

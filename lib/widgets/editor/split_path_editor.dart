@@ -7,6 +7,7 @@ import 'package:pathplanner/path/constraints_zone.dart';
 import 'package:pathplanner/path/event_marker.dart';
 import 'package:pathplanner/path/path_constraints.dart';
 import 'package:pathplanner/path/pathplanner_path.dart';
+import 'package:pathplanner/path/pickup_zone.dart';
 import 'package:pathplanner/path/pivot_route.dart';
 import 'package:pathplanner/path/point_towards_zone.dart';
 import 'package:pathplanner/path/rotation_target.dart';
@@ -87,6 +88,7 @@ class _SplitPathEditorState extends State<SplitPathEditor>
   Translation2d? _draggedRotationPos;
   Rotation2d? _dragRotationOldValue;
   int? _draggedZoneCorner;
+  int? _draggedZoneRegion;
   List<Translation2d>? _zoneDragOldValue;
   PathPlannerTrajectory? _simTraj;
   bool _paused = false;
@@ -241,23 +243,35 @@ class _SplitPathEditorState extends State<SplitPathEditor>
     return widget.path.obstacleRegions[_viewRegionIndex].blockTimeoutSec != null;
   }
 
-  /// The pickup zone of the selected game piece region, if it has one. Only on the main path.
-  List<Translation2d>? _selectedPickupZone() {
-    if (_divertTarget != null || _selectedRegion == null) return null;
+  /// Indexes of game piece regions with a zone that can be dragged, the selected one first.
+  /// Only on the main path in the normal view.
+  List<int> _draggableZoneRegions() {
+    if (_divertTarget != null || _viewMode != 0) return const [];
     final regions = widget.path.obstacleRegions;
-    if (_selectedRegion! >= regions.length) return null;
-    final ObstacleRegion region = regions[_selectedRegion!];
-    if (region.trigger != RegionTrigger.gamePiece) return null;
-    return region.pickupZone;
+    final List<int> out = [];
+    for (int i = 0; i < regions.length; i++) {
+      final zone = regions[i].pickupZone;
+      if (regions[i].trigger == RegionTrigger.gamePiece &&
+          zone != null &&
+          zone.length >= 3) {
+        if (i == _selectedRegion) {
+          out.insert(0, i);
+        } else {
+          out.add(i);
+        }
+      }
+    }
+    return out;
   }
 
   /// Save a finished zone corner drag so it can be undone
   void _finishZoneDrag() {
-    final int regionIdx = _selectedRegion!;
+    final int regionIdx = _draggedZoneRegion!;
     final List<Translation2d> before = _zoneDragOldValue!;
     final List<Translation2d> after =
         List.of(widget.path.obstacleRegions[regionIdx].pickupZone!);
     _draggedZoneCorner = null;
+    _draggedZoneRegion = null;
     _zoneDragOldValue = null;
 
     void setZone(List<Translation2d> zone) {
@@ -456,19 +470,21 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                 double xPos = _xPixelsToMeters(details.localPosition.dx);
                 double yPos = _yPixelsToMeters(details.localPosition.dy);
 
-                // A corner of the selected region's pickup zone
-                final List<Translation2d>? zone = _selectedPickupZone();
-                if (zone != null) {
-                  final num grab = _pixelsToMeters(
-                      PathPainterUtil.uiPointSizeToPixels(
-                          PathPainter.zoneCornerSize,
-                          PathPainter.scale,
-                          widget.fieldImage));
-                  final Translation2d pointer = Translation2d(xPos, yPos);
+                // A corner of a game piece region's pickup zone, the selected region first
+                final num grab = _pixelsToMeters(
+                    PathPainterUtil.uiPointSizeToPixels(PathPainter.zoneCornerSize,
+                        PathPainter.scale, widget.fieldImage));
+                final Translation2d pointer = Translation2d(xPos, yPos);
+                for (final int r in _draggableZoneRegions()) {
+                  final zone = widget.path.obstacleRegions[r].pickupZone!;
                   for (int c = 0; c < zone.length; c++) {
                     if (zone[c].getDistance(pointer) <= grab) {
-                      _draggedZoneCorner = c;
-                      _zoneDragOldValue = List.of(zone);
+                      setState(() {
+                        _draggedZoneRegion = r;
+                        _draggedZoneCorner = c;
+                        _zoneDragOldValue = List.of(zone);
+                        _selectedRegion = r;
+                      });
                       return;
                     }
                   }
@@ -534,14 +550,21 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                 }
               },
               onPanUpdate: (details) {
-                if (_draggedZoneCorner != null) {
-                  final List<Translation2d>? zone = _selectedPickupZone();
-                  if (zone != null && _draggedZoneCorner! < zone.length) {
-                    setState(() {
-                      zone[_draggedZoneCorner!] = Translation2d(
-                          _xPixelsToMeters(details.localPosition.dx),
-                          _yPixelsToMeters(details.localPosition.dy));
-                    });
+                if (_draggedZoneCorner != null && _draggedZoneRegion != null) {
+                  final regions = widget.path.obstacleRegions;
+                  if (_draggedZoneRegion! < regions.length) {
+                    final region = regions[_draggedZoneRegion!];
+                    final zone = region.pickupZone;
+                    if (zone != null && _draggedZoneCorner! < zone.length) {
+                      setState(() {
+                        zone[_draggedZoneCorner!] = PickupZone.clampCorner(
+                            widget.path,
+                            region,
+                            Translation2d(
+                                _xPixelsToMeters(details.localPosition.dx),
+                                _yPixelsToMeters(details.localPosition.dy)));
+                      });
+                    }
                   }
                   return;
                 }

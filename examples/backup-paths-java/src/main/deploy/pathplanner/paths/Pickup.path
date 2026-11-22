@@ -78,7 +78,25 @@
       "blockTimeoutSec": null,
       "action": "continuePath",
       "trigger": "gamePiece",
-      "pieceMaxDistance": 1.5
+      "pieceMaxDistance": 1.5,
+      "pickupZone": [
+        {
+          "x": 2.66,
+          "y": 0.841
+        },
+        {
+          "x": 7.456,
+          "y": 0.078
+        },
+        {
+          "x": 7.658,
+          "y": 1.351
+        },
+        {
+          "x": 2.862,
+          "y": 2.114
+        }
+      ]
     }
   ]
 }

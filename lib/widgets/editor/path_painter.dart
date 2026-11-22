@@ -723,20 +723,43 @@ class PathPainter extends CustomPainter {
 
   /// Highlight each region on the main path in yellow.
   void _paintRegions(PathPlannerPath path, Canvas canvas, double scale) {
+    // Every region gets a faint yellow band so it is always visible on the field. The selected or
+    // hovered one is drawn thick and bright, with a dark outline and end caps, so it stands out
+    // on any field image.
     for (int i = 0; i < path.obstacleRegions.length; i++) {
       final region = path.obstacleRegions[i];
       final bool active = i == selectedRegion || i == hoveredRegion;
-      if (active) {
-        _paintRegionSpan(path, region, canvas, scale, Colors.yellow);
+      if (active) continue;
+      _paintRegionSpan(path, region, canvas, scale, Colors.yellow.withAlpha(190),
+          width: 6);
+    }
+    for (int i = 0; i < path.obstacleRegions.length; i++) {
+      final region = path.obstacleRegions[i];
+      final bool active = i == selectedRegion || i == hoveredRegion;
+      if (!active) continue;
+      _paintRegionSpan(path, region, canvas, scale, Colors.black.withAlpha(170),
+          width: 14);
+      _paintRegionSpan(path, region, canvas, scale, Colors.yellow, width: 9);
+      for (final pos in [region.startPos, region.endPos]) {
+        final o = PathPainterUtil.pointToPixelOffset(
+            path.samplePath(pos), scale, fieldImage);
+        canvas.drawCircle(o, 9, Paint()..color = Colors.yellow);
+        canvas.drawCircle(
+            o,
+            9,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2
+              ..color = Colors.black);
       }
     }
   }
 
   /// Size of a pickup zone corner handle, in UI points
-  static const double zoneCornerSize = 18;
+  static const double zoneCornerSize = 22;
 
-  /// Draw the pickup zone of each game piece region. The selected or hovered region's zone is
-  /// drawn brighter, with handles on its corners for dragging.
+  /// Draw the pickup zone of each game piece region, with a draggable handle on each corner. The
+  /// selected or hovered region's zone is drawn brighter, with bigger handles.
   void _paintPickupZones(PathPlannerPath path, Canvas canvas, double scale) {
     for (int i = 0; i < path.obstacleRegions.length; i++) {
       final region = path.obstacleRegions[i];
@@ -754,48 +777,51 @@ class PathPainter extends CustomPainter {
           outline,
           Paint()
             ..style = PaintingStyle.fill
-            ..color = Colors.orange.withAlpha(active ? 70 : 35));
+            ..color = Colors.orange.withAlpha(active ? 80 : 45));
       canvas.drawPath(
           outline,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = active ? 3 : 2
-            ..color = Colors.orange.withAlpha(active ? 255 : 150));
+            ..strokeWidth = active ? 4 : 3
+            ..color = Colors.orange.withAlpha(active ? 255 : 200));
 
-      if (i == selectedRegion) {
-        final double r =
-            PathPainterUtil.uiPointSizeToPixels(zoneCornerSize / 2, scale, fieldImage);
-        for (final c in corners) {
-          canvas.drawCircle(c, r, Paint()..color = Colors.orange);
-          canvas.drawCircle(
-              c,
-              r,
-              Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 2
-                ..color = Colors.black);
-        }
+      final double r = PathPainterUtil.uiPointSizeToPixels(
+          (active ? zoneCornerSize : zoneCornerSize * 0.75) / 2, scale, fieldImage);
+      for (final c in corners) {
+        canvas.drawCircle(c, r, Paint()..color = Colors.orange);
+        canvas.drawCircle(
+            c,
+            r,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2
+              ..color = active ? Colors.white : Colors.black);
       }
     }
   }
 
   /// Draw the part of a path that a region covers, in the given color
   void _paintRegionSpan(PathPlannerPath path, ObstacleRegion region, Canvas canvas,
-      double scale, Color color) {
+      double scale, Color color, {double width = 6}) {
     if (region.endPos <= region.startPos) return;
     final highlight = Paint()
       ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..color = color
-      ..strokeWidth = 6;
+      ..strokeWidth = width;
     Path p = Path();
     Offset start = PathPainterUtil.pointToPixelOffset(
         path.samplePath(region.startPos), scale, fieldImage);
     p.moveTo(start.dx, start.dy);
-    for (num t = region.startPos + 0.05; t <= region.endPos; t += 0.05) {
+    for (num t = region.startPos + 0.05; t < region.endPos; t += 0.05) {
       Offset o = PathPainterUtil.pointToPixelOffset(
           path.samplePath(t), scale, fieldImage);
       p.lineTo(o.dx, o.dy);
     }
+    Offset end = PathPainterUtil.pointToPixelOffset(
+        path.samplePath(region.endPos), scale, fieldImage);
+    p.lineTo(end.dx, end.dy);
     canvas.drawPath(p, highlight);
   }
 

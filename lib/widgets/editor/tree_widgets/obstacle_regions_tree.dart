@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:pathplanner/path/obstacle_region.dart';
 import 'package:pathplanner/path/pathplanner_path.dart';
+import 'package:pathplanner/path/pickup_zone.dart';
 import 'package:pathplanner/widgets/editor/tree_widgets/item_count.dart';
 import 'package:pathplanner/widgets/editor/tree_widgets/tree_card_node.dart';
 import 'package:pathplanner/widgets/number_text_field.dart';
@@ -37,6 +38,7 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
   List<ObstacleRegion> get regions => widget.path.obstacleRegions;
 
   final List<ExpansibleController> _controllers = [];
+  final ExpansibleController _listController = ExpansibleController();
 
   /// The highest position a region can use, from the last waypoint
   double get _maxPos => max(1, widget.path.waypoints.length - 1).toDouble();
@@ -54,6 +56,13 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
   }
 
   void _syncControllers() {
+    // Game piece regions always use a zone. Older files may not have one yet.
+    for (final region in regions) {
+      if (region.trigger == RegionTrigger.gamePiece &&
+          region.pickupZone == null) {
+        region.pickupZone = _defaultZone(region);
+      }
+    }
     while (_controllers.length < regions.length) {
       _controllers.add(ExpansibleController());
     }
@@ -62,10 +71,37 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
     }
   }
 
-  /// A square zone centered on the middle of the region's part of the path
+  /// A zone that surrounds the region's part of the path
   List<Translation2d> _defaultZone(ObstacleRegion region) {
-    final num mid = (region.startPos + region.endPos) / 2;
-    return ObstacleRegion.squareZone(widget.path.samplePath(mid));
+    return PickupZone.defaultZone(widget.path, region);
+  }
+
+  /// After the region's range changes, refit the zone if a corner is now too far from it
+  void _fitZoneToRange(ObstacleRegion region) {
+    final zone = region.pickupZone;
+    if (region.trigger != RegionTrigger.gamePiece || zone == null) return;
+    for (final c in zone) {
+      final clamped = PickupZone.clampCorner(widget.path, region, c);
+      if (clamped.getDistance(c) > 1e-6) {
+        region.pickupZone = _defaultZone(region);
+        return;
+      }
+    }
+  }
+
+  /// Open a region's card and select it so it shows on the field
+  void _openRegion(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_listController.isExpanded) _listController.expand();
+      // The region's card only exists once the list is open, so wait one more frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || index >= _controllers.length) return;
+        if (!_controllers[index].isExpanded) _controllers[index].expand();
+        widget.onRegionSelected?.call(index);
+      });
+      WidgetsBinding.instance.scheduleFrame();
+    });
   }
 
   /// Make a change that can be undone. [change] edits the path's region list.
@@ -93,6 +129,7 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
   @override
   Widget build(BuildContext context) {
     return TreeCardNode(
+      controller: _listController,
       title: const Text('Path Regions'),
       leading: const Icon(Icons.warning_amber_rounded),
       trailing: Row(
@@ -105,6 +142,7 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
               _edit(() {
                 regions.add(ObstacleRegion(startPos: 0, endPos: _maxPos));
               });
+              _openRegion(regions.length - 1);
             },
           ),
           const SizedBox(width: 8),
@@ -156,7 +194,10 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
             });
             widget.onPathChangedNoSim?.call();
           },
-          onChangeEnd: (_) => widget.onPathChanged?.call(),
+          onChangeEnd: (_) {
+            setState(() => _fitZoneToRange(region));
+            widget.onPathChanged?.call();
+          },
         ),
         const SizedBox(height: 8),
         SegmentedButton<RegionTrigger>(
@@ -172,64 +213,31 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
           ],
           selected: {region.trigger},
           onSelectionChanged: (selection) {
-            _edit(() => region.trigger = selection.first);
+            _edit(() {
+              region.trigger = selection.first;
+              if (region.trigger == RegionTrigger.gamePiece) {
+                region.pickupZone ??= _defaultZone(region);
+              }
+            });
+            widget.onRegionSelected?.call(index);
           },
         ),
         if (region.trigger == RegionTrigger.gamePiece) ...[
           const SizedBox(height: 8),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(
-                  value: false,
-                  icon: Icon(Icons.social_distance_rounded),
-                  label: Text('Within a distance')),
-              ButtonSegment(
-                  value: true,
-                  icon: Icon(Icons.crop_square_rounded),
-                  label: Text('Inside a zone')),
-            ],
-            selected: {region.pickupZone != null},
-            onSelectionChanged: (selection) {
-              final bool useZone = selection.first;
-              _edit(() {
-                region.pickupZone = useZone ? _defaultZone(region) : null;
-              });
-              if (useZone) widget.onRegionSelected?.call(index);
-            },
-          ),
-          const SizedBox(height: 8),
-          if (region.pickupZone == null) ...[
-            const Text(
-                'If a game piece is seen this close to the robot while it is in this part of the path, the robot drives to it with the intake running.'),
-            const SizedBox(height: 8),
-            NumberTextField(
-              key: ValueKey('pieceDist$index'),
-              initialValue: region.pieceMaxDistance,
-              label: 'Max distance to the piece (m)',
-              minValue: 0.1,
-              precision: 2,
-              onSubmitted: (value) {
-                if (value != null && value > 0) {
-                  _edit(() => region.pieceMaxDistance = value.toDouble());
-                }
+          const Text(
+              'While the robot is in this part of the path, any game piece seen inside the orange zone is picked up. Pieces outside the zone are ignored. Drag the 4 orange dots on the field to stretch or shrink the zone. It can reach about 3/4 of the region\'s length away from the path (1 to 4 m).'),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
+              label: const Text('Reset zone around this region'),
+              onPressed: () {
+                _edit(() => region.pickupZone = _defaultZone(region));
+                widget.onRegionSelected?.call(index);
               },
             ),
-          ] else ...[
-            const Text(
-                'While the robot is in this part of the path, any game piece seen inside the orange zone is picked up. Pieces outside the zone are ignored. Drag the 4 corners on the field to shape the zone.'),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
-                label: const Text('Re-center zone on this region'),
-                onPressed: () {
-                  _edit(() => region.pickupZone = _defaultZone(region));
-                  widget.onRegionSelected?.call(index);
-                },
-              ),
-            ),
-          ],
+          ),
         ],
         if (region.trigger == RegionTrigger.robot) ...[
           const SizedBox(height: 8),

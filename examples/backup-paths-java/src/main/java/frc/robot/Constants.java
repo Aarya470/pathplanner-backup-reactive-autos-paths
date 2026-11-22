@@ -46,7 +46,27 @@ public final class Constants {
         new Translation3d(Units.inchesToMeters(-16), 0, Units.inchesToMeters(5)),
         new Rotation3d(0, 0, Math.PI));
 
-    /** The class numbers your model uses for robots. */
-    public static final int[] robotClassIds = {1, 2};
+    /** The class numbers your model uses for red robots and blue robots. */
+    public static final int[] redRobotClassIds = {1};
+    public static final int[] blueRobotClassIds = {2};
+  }
+
+  public static final class GamePieceDetection {
+    /**
+     * The game piece camera's name in PhotonVision. Use a different camera from the robot
+     * detection camera: two detectors reading the same camera take each other's frames.
+     */
+    public static final String cameraName = "IntakeCam";
+
+    /** Where the camera sits, the same way as Detection.robotToCamera. Here: on the back, facing back, tilted 20 degrees down. */
+    public static final Transform3d robotToCamera = new Transform3d(
+        new Translation3d(Units.inchesToMeters(-14), 0, Units.inchesToMeters(12)),
+        new Rotation3d(0, Units.degreesToRadians(20), Math.PI));
+
+    /** The class number or numbers your model uses for game pieces. */
+    public static final int[] pieceClassIds = {0};
+
+    /** Which way the intake faces: 0 for the front, 180 for the back. */
+    public static final double intakeFacingDeg = 180;
   }
 }
