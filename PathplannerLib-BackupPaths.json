@@ -1,7 +1,7 @@
 {
     "fileName": "PathplannerLib-BackupPaths.json",
     "name": "PathplannerLib-BackupPaths",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "uuid": "3d6a28a7-468a-4c75-afd7-ccf2a78e3135",
     "frcYear": "2026",
     "mavenUrls": [
@@ -19,7 +19,7 @@
         {
             "groupId": "io.github.aarya470",
             "artifactId": "PathplannerLibBackupPaths-java",
-            "version": "1.1.0"
+            "version": "1.2.0"
         }
     ],
     "jniDependencies": [],
