@@ -194,7 +194,7 @@ jobs:
 
       - name: Zip example robot project
         run: |
-          sed -i "s/\"version\": \"1.0.0\"/\"version\": \"${VERSION}\"/g" examples/backup-paths-java/vendordeps/PathplannerLib-BackupPaths.json
+          sed -i -E "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/g" examples/backup-paths-java/vendordeps/PathplannerLib-BackupPaths.json
           mkdir -p example
           cd examples
           zip -qr "../example/PathPlannerBackupPaths-v${VERSION}-ExampleRobot.zip" backup-paths-java -x "*/build/*" "*/.gradle/*"

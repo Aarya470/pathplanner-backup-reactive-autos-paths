@@ -29,6 +29,8 @@ import java.util.stream.Stream;
 
 /** Utility class used to build auto routines */
 public class AutoBuilder {
+  private static boolean warnedNoRegionSetup = false;
+
   private static Globals globals = new Globals();
 
   /**
@@ -278,6 +280,15 @@ public class AutoBuilder {
 
     // Regions need the robot pose from ObstacleSettings. Without it, follow the path as normal.
     if (path.getObstacleRegions().isEmpty() || ObstacleSettings.getPoseSupplier() == null) {
+      if (!path.getObstacleRegions().isEmpty() && !warnedNoRegionSetup) {
+        warnedNoRegionSetup = true;
+        DriverStation.reportWarning(
+            "PathPlanner: path "
+                + path.name
+                + " has regions, but BackupPaths.setup(...) was not called before the autos were"
+                + " built, so its regions are ignored.",
+            false);
+      }
       return globals.pathFollowingCommandBuilder.apply(path);
     }
     return ObstacleRegionRunner.build(path, globals.driveRequirements);

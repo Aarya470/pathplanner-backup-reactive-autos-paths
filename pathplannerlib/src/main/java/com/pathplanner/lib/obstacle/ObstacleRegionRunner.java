@@ -350,7 +350,7 @@ public final class ObstacleRegionRunner {
     // only pieces within the max distance count.
     double bestDist = zone.isEmpty() ? watch.region.getPieceMaxDistanceM() : Double.POSITIVE_INFINITY;
     for (GamePiece g : GamePieceSettings.getSource().getGamePieces()) {
-      if (now - g.timestampSec() > ObstacleSettings.getStaleAfterSec()) continue;
+      if (now - g.timestampSec() > GamePieceSettings.getStaleAfterSec()) continue;
       if (!zone.isEmpty()
           && !RegionGeometry.insidePolygon(zone, g.position().x(), g.position().y())) {
         continue;

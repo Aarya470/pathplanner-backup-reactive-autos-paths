@@ -34,7 +34,11 @@ import org.photonvision.targeting.TargetCorner;
  *     "DetectionCam", robotToCamera, () -> drivetrain.getPose(), 1);
  * if (detector.isRobotAhead(1.5)) { ... }
  * }</pre>
+ *
+ * @deprecated Simpler: {@code Camera.photon("name").mountedAt(...)} with {@link
+ *     com.pathplanner.lib.BackupPaths}. This class still works.
  */
+@Deprecated
 public class PhotonRobotDetector implements RobotDetector {
   private final PhotonCamera camera;
   private final Transform3d robotToCamera;

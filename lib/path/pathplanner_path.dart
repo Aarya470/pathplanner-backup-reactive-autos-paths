@@ -11,6 +11,7 @@ import 'package:pathplanner/commands/named_command.dart';
 import 'package:pathplanner/pages/project/project_page.dart';
 import 'package:pathplanner/path/constraints_zone.dart';
 import 'package:pathplanner/path/obstacle_region.dart';
+import 'package:pathplanner/path/pickup_zone.dart';
 import 'package:pathplanner/path/event_marker.dart';
 import 'package:pathplanner/path/goal_end_state.dart';
 import 'package:pathplanner/path/path_constraints.dart';
@@ -208,7 +209,10 @@ class PathPlannerPath {
               PathPlannerPath.fromJson(json, pathName, pathsDir, fs);
           path.lastModified = (await file.lastModified()).toUtc();
 
-          if (json['version'] != fileVersion) {
+          // Game piece regions always use a zone now. Give older ones a zone around the region
+          // and save it, so the robot uses the same zone the app shows.
+          final bool addedZones = path.addMissingPickupZones();
+          if (json['version'] != fileVersion || addedZones) {
             path.saveFile();
           }
 
@@ -219,6 +223,20 @@ class PathPlannerPath {
       }
     }
     return paths;
+  }
+
+  /// Give every game piece region without a pickup zone one around its part of the path.
+  /// Returns true if any zone was added.
+  bool addMissingPickupZones() {
+    bool added = false;
+    for (final region in obstacleRegions) {
+      if (region.trigger == RegionTrigger.gamePiece &&
+          (region.pickupZone == null || region.pickupZone!.length < 3)) {
+        region.pickupZone = PickupZone.defaultZone(this, region);
+        added = true;
+      }
+    }
+    return added;
   }
 
   void deletePath() {

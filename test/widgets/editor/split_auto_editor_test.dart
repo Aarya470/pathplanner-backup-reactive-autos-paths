@@ -11,6 +11,7 @@ import 'package:pathplanner/path/event_marker.dart';
 import 'package:pathplanner/path/obstacle_region.dart';
 import 'package:pathplanner/path/pathplanner_path.dart';
 import 'package:pathplanner/path/rotation_target.dart';
+import 'package:pathplanner/path/waypoint.dart';
 import 'package:pathplanner/util/prefs.dart';
 import 'package:pathplanner/util/wpimath/geometry.dart';
 import 'package:pathplanner/util/wpimath/kinematics.dart';
@@ -289,5 +290,74 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('Pivot'), findsNothing);
+  });
+
+  testWidgets('continue view puts each wait in its own path', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 720));
+    PathPlannerPath line(String name, Translation2d a, Translation2d b) {
+      final p = PathPlannerPath.defaultPath(pathDir: '/paths', fs: fs, name: name);
+      final d = (b - a) * (1 / 3);
+      p.waypoints = [
+        Waypoint(anchor: a, nextControl: a + d),
+        Waypoint(anchor: b, prevControl: b - d),
+      ];
+      p.generatePathPoints();
+      return p;
+    }
+
+    // A drives 4,2 -> 6,2 and waits near its end. B drives back over A to 2,2 and waits at 4,2,
+    // a point A also passes.
+    final a = line('A', const Translation2d(4, 2), const Translation2d(6, 2));
+    final b = line('B', const Translation2d(6, 2), const Translation2d(2, 2));
+    a.obstacleRegions = [ObstacleRegion(startPos: 0.2, endPos: 0.8, blockTimeoutSec: 1.0)];
+    b.obstacleRegions = [ObstacleRegion(startPos: 0.3, endPos: 0.5, blockTimeoutSec: 2.0)];
+    auto.sequence.commands = [];
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SplitAutoEditor(
+          prefs: prefs,
+          auto: auto,
+          autoPaths: [a, b],
+          autoChoreoPaths: const [],
+          allPathNames: const ['A', 'B'],
+          fieldImage: FieldImage.official(OfficialField.crescendo),
+          undoStack: undoStack,
+          onAutoChanged: () {},
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    PathPainter painter() => tester
+        .widget<CustomPaint>(find.byWidgetPredicate(
+            (w) => w is CustomPaint && w.painter is PathPainter))
+        .painter as PathPainter;
+    final num normalTime = painter().simulatedPath!.getTotalTimeSeconds();
+
+    await tester.tap(find.text('Continue'));
+    await tester.pump(const Duration(milliseconds: 200));
+    final states = painter().simulatedPath!.states;
+    expect(painter().simulatedPath!.getTotalTimeSeconds(),
+        closeTo(normalTime + 3.0, 0.05));
+
+    // Find the waits: two states at the same place, the second one 'timeout' seconds later
+    final waits = <(num, Translation2d, int)>[];
+    for (int i = 1; i < states.length; i++) {
+      final dt = states[i].timeSeconds - states[i - 1].timeSeconds;
+      if (dt > 0.5 &&
+          states[i].pose.translation.getDistance(states[i - 1].pose.translation) < 1e-6) {
+        waits.add((dt, states[i].pose.translation, i));
+      }
+    }
+    expect(waits.length, 2);
+    expect(waits[0].$1, closeTo(1.0, 0.01));
+    expect(waits[0].$2.getDistance(a.samplePath(0.8)), lessThan(0.2));
+    expect(waits[1].$1, closeTo(2.0, 0.01));
+    expect(waits[1].$2.getDistance(b.samplePath(0.5)), lessThan(0.2));
+    // B's wait is in B's part of the auto: after the robot has reached A's far end
+    final reachedEnd = states.indexWhere(
+        (s) => s.pose.translation.getDistance(const Translation2d(6, 2)) < 0.05);
+    expect(waits[1].$3, greaterThan(reachedEnd));
   });
 }

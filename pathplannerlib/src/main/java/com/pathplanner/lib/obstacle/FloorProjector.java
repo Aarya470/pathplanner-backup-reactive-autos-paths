@@ -63,29 +63,31 @@ public final class FloorProjector {
    */
   public Point projectToField(
       double u, double v, double robotX, double robotY, double robotHeadingRad) {
-    // Angle of this pixel's ray below the optical axis (positive = below)
-    double rayDepressionOffset = Math.atan2(v - cy, fy);
-    double depression = cameraPitchDownRad + rayDepressionOffset;
-    if (depression <= 1e-6) {
+    // The pixel's ray in the camera's frame: x out of the lens, y left, z up. Using both image
+    // axes together keeps targets near the sides of the image at the right distance.
+    double x = 1.0;
+    double y = (cx - u) / fx;
+    double z = (cy - v) / fy;
+
+    // Tilt the camera down
+    double xt = x * Math.cos(cameraPitchDownRad) + z * Math.sin(cameraPitchDownRad);
+    double zt = -x * Math.sin(cameraPitchDownRad) + z * Math.cos(cameraPitchDownRad);
+    if (zt >= -1e-9) {
       return null; // ray points at or above the horizon
     }
-    double groundDistance = cameraHeightM / Math.tan(depression);
+    double t = cameraHeightM / -zt;
 
-    // Horizontal bearing of the ray relative to the optical axis (left of center is positive)
-    double bearingOffset = Math.atan2(cx - u, fx);
+    // Floor point relative to the lens, turned the way the camera faces
+    double yawCos = Math.cos(cameraYawRad);
+    double yawSin = Math.sin(cameraYawRad);
+    double relX = cameraForwardM + t * (xt * yawCos - y * yawSin);
+    double relY = cameraLeftM + t * (xt * yawSin + y * yawCos);
 
-    // Lens position in field coordinates
+    // Then onto the field with the robot's pose
     double headingCos = Math.cos(robotHeadingRad);
     double headingSin = Math.sin(robotHeadingRad);
-    double lensX =
-        robotX + cameraForwardM * headingCos - cameraLeftM * headingSin;
-    double lensY =
-        robotY + cameraForwardM * headingSin + cameraLeftM * headingCos;
-
-    // Field direction of the ray
-    double rayHeading = robotHeadingRad + cameraYawRad + bearingOffset;
     return new Point(
-        lensX + groundDistance * Math.cos(rayHeading),
-        lensY + groundDistance * Math.sin(rayHeading));
+        robotX + relX * headingCos - relY * headingSin,
+        robotY + relX * headingSin + relY * headingCos);
   }
 }

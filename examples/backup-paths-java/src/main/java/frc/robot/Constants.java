@@ -6,11 +6,7 @@ package frc.robot;
 
 import com.pathplanner.lib.config.PIDConstants;
 
-import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation2d;
-import edu.wpi.first.math.geometry.Translation3d;
-import edu.wpi.first.math.util.Units;
 
 /**
  * The Constants class provides a convenient place for teams to hold robot-wide numerical or boolean
@@ -31,42 +27,5 @@ public final class Constants {
 
     public static final PIDConstants translationConstants = new PIDConstants(5.0, 0.0, 0.0);
     public static final PIDConstants rotationConstants = new PIDConstants(5.0, 0.0, 0.0);
-  }
-
-  /** The robot detection camera. Change these for your robot and model. */
-  public static final class Detection {
-    /** The camera's name in PhotonVision. */
-    public static final String cameraName = "DetectionCam";
-
-    /**
-     * Where the camera sits: x forward, y left, z up from the robot's center on the floor (meters).
-     * Yaw is which way it points (180 = backward), pitch its tilt (positive = tilted down).
-     */
-    public static final Transform3d robotToCamera = new Transform3d(
-        new Translation3d(Units.inchesToMeters(-16), 0, Units.inchesToMeters(5)),
-        new Rotation3d(0, 0, Math.PI));
-
-    /** The class numbers your model uses for red robots and blue robots. */
-    public static final int[] redRobotClassIds = {1};
-    public static final int[] blueRobotClassIds = {2};
-  }
-
-  public static final class GamePieceDetection {
-    /**
-     * The game piece camera's name in PhotonVision. Use a different camera from the robot
-     * detection camera: two detectors reading the same camera take each other's frames.
-     */
-    public static final String cameraName = "IntakeCam";
-
-    /** Where the camera sits, the same way as Detection.robotToCamera. Here: on the back, facing back, tilted 20 degrees down. */
-    public static final Transform3d robotToCamera = new Transform3d(
-        new Translation3d(Units.inchesToMeters(-14), 0, Units.inchesToMeters(12)),
-        new Rotation3d(0, Units.degreesToRadians(20), Math.PI));
-
-    /** The class number or numbers your model uses for game pieces. */
-    public static final int[] pieceClassIds = {0};
-
-    /** Which way the intake faces: 0 for the front, 180 for the back. */
-    public static final double intakeFacingDeg = 180;
   }
 }

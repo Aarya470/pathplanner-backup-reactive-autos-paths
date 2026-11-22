@@ -83,12 +83,59 @@ class PickupZone {
     maxB += sidePadding;
 
     Translation2d corner(double a, double b) => u * a + n * b;
+    // On a curvy region the box's corners can be farther out than a corner may be dragged, so
+    // pull them in to the same limit
     return [
-      corner(minA, minB),
-      corner(maxA, minB),
-      corner(maxA, maxB),
-      corner(minA, maxB),
+      for (final c in [
+        corner(minA, minB),
+        corner(maxA, minB),
+        corner(maxA, maxB),
+        corner(minA, maxB),
+      ])
+        clampCorner(path, region, c),
     ];
+  }
+
+  /// True if the point is inside the zone
+  static bool contains(List<Translation2d> zone, Translation2d p) {
+    bool inside = false;
+    for (int i = 0, j = zone.length - 1; i < zone.length; j = i++) {
+      final a = zone[i], b = zone[j];
+      if ((a.y > p.y) != (b.y > p.y) &&
+          p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  /// True if no two edges of the zone cross. A crossed zone has no clear inside.
+  static bool isSimple(List<Translation2d> zone) {
+    final int n = zone.length;
+    if (n < 4) return true;
+    for (int i = 0; i < n; i++) {
+      for (int j = i + 1; j < n; j++) {
+        // Edges that share a corner always touch
+        if (j == i + 1 || (i == 0 && j == n - 1)) continue;
+        if (_segmentsCross(
+            zone[i], zone[(i + 1) % n], zone[j], zone[(j + 1) % n])) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  static bool _segmentsCross(
+      Translation2d a, Translation2d b, Translation2d c, Translation2d d) {
+    num cross(Translation2d o, Translation2d p, Translation2d q) =>
+        (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+    final num d1 = cross(c, d, a);
+    final num d2 = cross(c, d, b);
+    final num d3 = cross(a, b, c);
+    final num d4 = cross(a, b, d);
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
   }
 
   /// Keep a dragged corner within reach of the region

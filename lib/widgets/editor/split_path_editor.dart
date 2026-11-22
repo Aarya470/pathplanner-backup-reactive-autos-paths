@@ -345,6 +345,20 @@ class _SplitPathEditorState extends State<SplitPathEditor>
     return widget.path;
   }
 
+  /// Go back to a valid view after regions change: a deleted region, a region no longer set to
+  /// divert, or a timeout removed while in Continue view
+  void _checkViewMode() {
+    if (_viewMode == 0) return;
+    final pivots = _pivotIndices();
+    if (pivots.isEmpty) {
+      _viewMode = 0;
+      _viewRegionIndex = -1;
+      return;
+    }
+    if (!pivots.contains(_viewRegionIndex)) _viewRegionIndex = pivots.first;
+    if (_viewMode == 2 && !_selectedPivotHasTimeout()) _viewMode = 0;
+  }
+
   /// Indices of the regions that have a diverge path, in order
   List<int> _pivotIndices() {
     final indices = <int>[];
@@ -393,6 +407,7 @@ class _SplitPathEditorState extends State<SplitPathEditor>
 
   @override
   Widget build(BuildContext context) {
+    _checkViewMode();
     ColorScheme colorScheme = Theme.of(context).colorScheme;
 
     return Stack(
@@ -556,14 +571,19 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                     final region = regions[_draggedZoneRegion!];
                     final zone = region.pickupZone;
                     if (zone != null && _draggedZoneCorner! < zone.length) {
-                      setState(() {
-                        zone[_draggedZoneCorner!] = PickupZone.clampCorner(
-                            widget.path,
-                            region,
-                            Translation2d(
-                                _xPixelsToMeters(details.localPosition.dx),
-                                _yPixelsToMeters(details.localPosition.dy)));
-                      });
+                      final moved = PickupZone.clampCorner(
+                          widget.path,
+                          region,
+                          Translation2d(
+                              _xPixelsToMeters(details.localPosition.dx),
+                              _yPixelsToMeters(details.localPosition.dy)));
+                      final candidate = List.of(zone);
+                      candidate[_draggedZoneCorner!] = moved;
+                      // Don't let the zone fold over itself
+                      if (PickupZone.isSimple(candidate) ||
+                          !PickupZone.isSimple(zone)) {
+                        setState(() => zone[_draggedZoneCorner!] = moved);
+                      }
                     }
                   }
                   return;
@@ -787,6 +807,7 @@ class _SplitPathEditorState extends State<SplitPathEditor>
                               ? widget.path.obstacleRegions[_viewRegionIndex]
                               : null,
                           pivotRoute: _shownPivotRoute(),
+                          showZoneHandles: _divertTarget == null && _viewMode == 0,
                           pivotSplitIndex: (_divertTarget == null && _viewMode == 1 && _viewRegionIndex >= 0)
                               ? _pivotSplitIndex(widget.path.obstacleRegions[_viewRegionIndex])
                               : -1,
@@ -1146,6 +1167,7 @@ class _SplitPathEditorState extends State<SplitPathEditor>
 
   // marked as async so it can be called from initState
   void _simulatePath() async {
+    _checkViewMode();
     if (widget.simulate) {
       setState(() {
         _simTraj = PathPlannerTrajectory(

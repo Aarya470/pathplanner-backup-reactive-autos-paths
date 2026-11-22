@@ -6,14 +6,12 @@ package frc.robot;
 
 import java.util.List;
 
+import com.pathplanner.lib.BackupPaths;
 import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.PathPlannerAuto;
 import com.pathplanner.lib.events.EventTrigger;
-import com.pathplanner.lib.detection.PhotonGamePieceDetector;
-import com.pathplanner.lib.detection.PhotonRobotDetector;
-import com.pathplanner.lib.obstacle.GamePieceSettings;
-import com.pathplanner.lib.obstacle.ObstacleSettings;
+import com.pathplanner.lib.detection.Camera;
 import com.pathplanner.lib.path.GoalEndState;
 import com.pathplanner.lib.path.PathConstraints;
 import com.pathplanner.lib.path.PathPlannerPath;
@@ -30,8 +28,6 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
-import frc.robot.Constants.Detection;
-import frc.robot.Constants.GamePieceDetection;
 import frc.robot.subsystems.SwerveSubsystem;
 
 /**
@@ -43,8 +39,23 @@ import frc.robot.subsystems.SwerveSubsystem;
 public class RobotContainer {
   // The robot's subsystems and commands are defined here...
   private final SwerveSubsystem swerve = new SwerveSubsystem();
-  private PhotonRobotDetector detector;
-  private PhotonGamePieceDetector pieceDetector;
+
+  // Object detection cameras. mountedAt(forward m, left m, height m, tilt down deg, facing deg),
+  // measured from the robot's center on the floor. Facing: 0 = forward, 180 = backward.
+  //
+  // Using a Limelight instead? Swap Camera.photon("...") for Camera.limelight("limelight-name").
+  // Anything else? See Camera.fromAngles(...) and Camera.fromFieldPositions(...).
+
+  /** Sees robots, for "Robot in the way" regions. Classes 1 and 2 are red and blue robots. */
+  private final Camera robotCamera = Camera.photon("DetectionCam")
+      .mountedAt(-0.41, 0.0, 0.13, 0, 180)
+      .redClasses(1)
+      .blueClasses(2);
+
+  /** Sees game pieces, for "Game piece" regions. Class 0 is a game piece. */
+  private final Camera pieceCamera = Camera.photon("IntakeCam")
+      .mountedAt(-0.36, 0.0, 0.30, 20, 180)
+      .onlyClasses(0);
 
   private final SendableChooser<Command> autoChooser;
 
@@ -58,9 +69,8 @@ public class RobotContainer {
     // Use event markers as triggers
     new EventTrigger("Example Marker").onTrue(Commands.print("Passed an event marker"));
 
-    // Robot and game piece detection for path regions. Must run before the autos are built.
-    configureDetection();
-    configurePickups();
+    // Path regions: must run before the autos are built
+    configureBackupPaths();
 
     // Configure the trigger bindings
     configureBindings();
@@ -70,43 +80,22 @@ public class RobotContainer {
   }
 
   /**
-   * Connect the robot detection camera. Any path with "robot in the way" regions in the PathPlanner
-   * Backup Paths editor then waits or diverts when a robot blocks it, and the detector can be used
-   * anywhere else in robot code too.
+   * Connect the cameras and intake to path regions. Paths with "Robot in the way" regions then wait
+   * or divert when a robot blocks them, and paths with "Game piece" regions (like Pickup.path) pick
+   * up a piece seen in the orange zone and rejoin the path.
    */
-  private void configureDetection() {
-    int[] allRobots = new int[Detection.redRobotClassIds.length + Detection.blueRobotClassIds.length];
-    System.arraycopy(Detection.redRobotClassIds, 0, allRobots, 0, Detection.redRobotClassIds.length);
-    System.arraycopy(Detection.blueRobotClassIds, 0, allRobots, Detection.redRobotClassIds.length,
-        Detection.blueRobotClassIds.length);
+  private void configureBackupPaths() {
+    BackupPaths.setup(swerve::getPose, () -> swerve.driveRobotRelative(new ChassisSpeeds()));
+    BackupPaths.watchForRobots(robotCamera);
 
-    detector = new PhotonRobotDetector(
-        Detection.cameraName, Detection.robotToCamera, swerve::getPose, allRobots);
-    // Lets regions set to "opponents" or "teammates" tell the robots apart
-    detector.setAllianceClassIds(Detection.redRobotClassIds, Detection.blueRobotClassIds);
-    ObstacleSettings.configure(detector, swerve::getPose, () -> swerve.driveRobotRelative(new ChassisSpeeds()));
-  }
-
-  /**
-   * Connect the game piece camera and the intake. Any path with "game piece" regions (like
-   * Pickup.path) then drives to a piece seen inside the region's orange zone, runs the intake, and
-   * rejoins the path.
-   */
-  private void configurePickups() {
-    pieceDetector = new PhotonGamePieceDetector(
-        GamePieceDetection.cameraName, GamePieceDetection.robotToCamera, swerve::getPose,
-        GamePieceDetection.pieceClassIds);
-    GamePieceSettings.configure(
-        pieceDetector,
-        // Replace with your intake's command, for example intake::runIntakeCommand
+    BackupPaths.intakeIsOnBack();
+    BackupPaths.pickUpGamePieces(
+        pieceCamera,
+        // Replace with your intake's command, for example intake::intakeCommand
         () -> Commands.print("Intake running").andThen(Commands.idle()),
-        // Replace with your intake's beam break, for example intake::hasPiece. With null, the pickup
-        // ends 0.3 s after reaching the piece.
-        null,
-        0.3, // seconds to keep the intake running after reaching the piece
-        3.0, // give up on a pickup after this long
-        GamePieceDetection.intakeFacingDeg);
-        // Add your intake subsystem here as the last argument
+        // Replace with your beam break, for example intake::hasPiece (null = run 0.5 s at the piece)
+        null);
+        // Then add your intake subsystem as the last argument
   }
 
   /**
@@ -119,18 +108,12 @@ public class RobotContainer {
    * joysticks}.
    */
   private void configureBindings() {
-    // Robot detection outside of autos: print when a robot is within 1.5 m in front of the camera
-    new Trigger(() -> detector.isRobotAhead(1.5)).onTrue(Commands.print("Robot ahead"));
-    SmartDashboard.putData("Detection", builder -> {
-      builder.addBooleanProperty("Robot Ahead", () -> detector.isRobotAhead(1.5), null);
-      builder.addDoubleProperty("Closest Distance", () -> detector.getClosestRobot().isPresent()
-          ? detector.getClosestRobot().get().getDistanceMeters() : -1, null);
-      builder.addStringProperty("Status", detector::getStatus, null);
-    });
-    SmartDashboard.putData("Game Pieces", builder -> {
-      builder.addDoubleProperty("Seen", () -> pieceDetector.getGamePieces().size(), null);
-      builder.addStringProperty("Status", pieceDetector::getStatus, null);
-    });
+    // Cameras work outside of autos too: print when a robot is within 1.5 m
+    new Trigger(() -> robotCamera.seesSomethingWithin(1.5)).onTrue(Commands.print("Robot nearby"));
+
+    // Each camera's status ("OK", "Wrong class ID 3", ...) and what it sees, for setting up
+    SmartDashboard.putData("Robot Camera", robotCamera);
+    SmartDashboard.putData("Piece Camera", pieceCamera);
 
     // Add a button to run the example auto to SmartDashboard, this will also be in the auto chooser built above
     SmartDashboard.putData("Example Auto", new PathPlannerAuto("Example Auto"));

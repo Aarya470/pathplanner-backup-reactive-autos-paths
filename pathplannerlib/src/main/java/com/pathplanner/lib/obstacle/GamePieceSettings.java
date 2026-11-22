@@ -19,6 +19,7 @@ public final class GamePieceSettings {
   private static double intakeFacingDeg = 0.0;
   private static Subsystem[] intakeRequirements = new Subsystem[0];
   private static BooleanSupplier enabled = () -> true;
+  private static Double staleAfterSec = null;
 
   private GamePieceSettings() {}
 
@@ -44,6 +45,9 @@ public final class GamePieceSettings {
       double maxPickupSec,
       double intakeFacingDeg,
       Subsystem... intakeSubsystems) {
+    if (pieceSource instanceof com.pathplanner.lib.detection.Camera camera) {
+      camera.setDefaultTargetHeight(com.pathplanner.lib.BackupPaths.PIECE_TARGET_HEIGHT);
+    }
     source = pieceSource;
     intakeCommand = intake == null ? Commands::none : intake;
     hasPiece = hasPieceSensor;
@@ -62,6 +66,16 @@ public final class GamePieceSettings {
     enabled = pickupEnabled == null ? () -> true : pickupEnabled;
   }
 
+  /** Which way the intake faces: 0 = front, 180 = back. */
+  public static void setIntakeFacingDegrees(double degrees) {
+    intakeFacingDeg = degrees;
+  }
+
+  /** @return which way the intake faces, in degrees */
+  public static double getIntakeFacingDegrees() {
+    return intakeFacingDeg;
+  }
+
   static boolean isActive() {
     return source != null && enabled.getAsBoolean();
   }
@@ -71,7 +85,25 @@ public final class GamePieceSettings {
   }
 
   static Command makeIntakeCommand() {
-    return intakeCommand.get();
+    Command command = intakeCommand.get();
+    return command == null ? Commands.none() : command;
+  }
+
+  /**
+   * Game pieces seen longer ago than this are ignored. Null (the default) uses the same time as
+   * ObstacleSettings.
+   */
+  public static void setStaleAfterSec(Double seconds) {
+    staleAfterSec = seconds;
+  }
+
+  /** @return the stale time in use, for tests */
+  public static double getStaleAfterSecForTests() {
+    return getStaleAfterSec();
+  }
+
+  static double getStaleAfterSec() {
+    return staleAfterSec != null ? staleAfterSec : ObstacleSettings.getStaleAfterSec();
   }
 
   static BooleanSupplier getHasPiece() {

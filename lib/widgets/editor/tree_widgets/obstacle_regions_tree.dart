@@ -56,12 +56,10 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
   }
 
   void _syncControllers() {
-    // Game piece regions always use a zone. Older files may not have one yet.
-    for (final region in regions) {
-      if (region.trigger == RegionTrigger.gamePiece &&
-          region.pickupZone == null) {
-        region.pickupZone = _defaultZone(region);
-      }
+    // Game piece regions always use a zone. Paths get one when loaded; this covers any other
+    // way a region arrives without one. Save it so the robot uses the same zone.
+    if (widget.path.addMissingPickupZones()) {
+      widget.path.saveFile();
     }
     while (_controllers.length < regions.length) {
       _controllers.add(ExpansibleController());
@@ -76,18 +74,25 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
     return PickupZone.defaultZone(widget.path, region);
   }
 
-  /// After the region's range changes, refit the zone if a corner is now too far from it
+  /// After the region's range changes, pull in any zone corner that is now too far from it.
+  /// The rest of the zone's shape is kept.
   void _fitZoneToRange(ObstacleRegion region) {
     final zone = region.pickupZone;
     if (region.trigger != RegionTrigger.gamePiece || zone == null) return;
-    for (final c in zone) {
-      final clamped = PickupZone.clampCorner(widget.path, region, c);
-      if (clamped.getDistance(c) > 1e-6) {
-        region.pickupZone = _defaultZone(region);
-        return;
-      }
-    }
+    final clamped = [
+      for (final c in zone) PickupZone.clampCorner(widget.path, region, c)
+    ];
+    // Clamping corners one by one can fold the zone or leave part of the region outside it.
+    // Then start over with a zone around the new range.
+    final covers = PickupZone.regionPoints(widget.path, region)
+        .every((p) => PickupZone.contains(clamped, p));
+    region.pickupZone = PickupZone.isSimple(clamped) && covers
+        ? clamped
+        : _defaultZone(region);
   }
+
+  /// The regions before the range slider started moving, for undo
+  List<ObstacleRegion>? _rangeBefore;
 
   /// Open a region's card and select it so it shows on the field
   void _openRegion(int index) {
@@ -187,6 +192,9 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
           divisions: (_maxPos * 20).round(),
           labels: RangeLabels(region.startPos.toStringAsFixed(2),
               region.endPos.toStringAsFixed(2)),
+          onChangeStart: (_) {
+            _rangeBefore = PathPlannerPath.cloneObstacleRegions(regions);
+          },
           onChanged: (values) {
             setState(() {
               region.startPos = values.start;
@@ -195,8 +203,28 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
             widget.onPathChangedNoSim?.call();
           },
           onChangeEnd: (_) {
-            setState(() => _fitZoneToRange(region));
-            widget.onPathChanged?.call();
+            _fitZoneToRange(region);
+            final before = _rangeBefore ??
+                PathPlannerPath.cloneObstacleRegions(regions);
+            final after = PathPlannerPath.cloneObstacleRegions(regions);
+            _rangeBefore = null;
+            widget.undoStack.add(Change(
+              before,
+              () {
+                widget.path.obstacleRegions =
+                    PathPlannerPath.cloneObstacleRegions(after);
+                _syncControllers();
+                setState(() {});
+                widget.onPathChanged?.call();
+              },
+              (oldValue) {
+                widget.path.obstacleRegions =
+                    PathPlannerPath.cloneObstacleRegions(oldValue);
+                _syncControllers();
+                setState(() {});
+                widget.onPathChanged?.call();
+              },
+            ));
           },
         ),
         const SizedBox(height: 8),
@@ -214,9 +242,10 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
           selected: {region.trigger},
           onSelectionChanged: (selection) {
             _edit(() {
-              region.trigger = selection.first;
-              if (region.trigger == RegionTrigger.gamePiece) {
-                region.pickupZone ??= _defaultZone(region);
+              final r = regions[index];
+              r.trigger = selection.first;
+              if (r.trigger == RegionTrigger.gamePiece) {
+                r.pickupZone ??= _defaultZone(r);
               }
             });
             widget.onRegionSelected?.call(index);
@@ -233,7 +262,8 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
               icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
               label: const Text('Reset zone around this region'),
               onPressed: () {
-                _edit(() => region.pickupZone = _defaultZone(region));
+                _edit(() => regions[index].pickupZone =
+                    _defaultZone(regions[index]));
                 widget.onRegionSelected?.call(index);
               },
             ),
@@ -253,7 +283,7 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
                 ],
                 onChanged: (value) {
                   if (value != null) {
-                    _edit(() => region.obstacleTeam = value);
+                    _edit(() => regions[index].obstacleTeam = value);
                   }
                 },
               ),
@@ -267,7 +297,7 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
             precision: 2,
             onSubmitted: (value) {
               _edit(() {
-                region.blockTimeoutSec =
+                regions[index].blockTimeoutSec =
                     (value == null || value <= 0) ? null : value.toDouble();
               });
             },
@@ -288,7 +318,7 @@ class _ObstacleRegionsTreeState extends State<ObstacleRegionsTree> {
           ],
           selected: {region.action},
           onSelectionChanged: (selection) {
-            _edit(() => region.action = selection.first);
+            _edit(() => regions[index].action = selection.first);
           },
         ),
         if (region.action == RegionAction.divert) ...[

@@ -87,39 +87,71 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
       !widget.auto.choreoAuto &&
       widget.autoPaths.any((p) => _waitRegion(p) != null);
 
-  /// The paths to draw and simulate for the chosen view. In Pivot view, every path with a
-  /// diverge path is replaced by its pivot route.
+  /// The paths to draw and simulate for the chosen view. In Pivot view, the paths run up to the
+  /// first one with a diverge path, which is replaced by its pivot route. The auto's later paths
+  /// start where the main path ends, not where the diverge path ends, so they are left out.
   List<PathPlannerPath>? _pivotPaths;
 
   List<PathPlannerPath> _shownPaths() {
     if (_viewMode != 1) return widget.autoPaths;
-    return _pivotPaths ??= [
-      for (final p in widget.autoPaths)
-        if (_pivotRegion(p) case final ObstacleRegion r)
-          PivotRoute.build(p, r)
-        else
-          p,
-    ];
+    if (_pivotPaths != null) return _pivotPaths!;
+    final List<PathPlannerPath> shown = [];
+    for (final p in widget.autoPaths) {
+      final r = _pivotRegion(p);
+      if (r == null) {
+        shown.add(p);
+        continue;
+      }
+      final route = PivotRoute.build(p, r);
+      // Keep the original name, so hovering the path in the list still highlights it
+      route.name = p.name;
+      shown.add(route);
+      break;
+    }
+    return _pivotPaths = shown;
   }
 
-  /// In Continue view, hold the robot still at the end of each waiting region
-  void _addWaits(PathPlannerTrajectory traj) {
+  /// True if Pivot view leaves out paths after the pivot
+  bool get _pivotCutsAuto =>
+      _viewMode == 1 && _shownPaths().length < widget.autoPaths.length;
+
+  /// In Continue view, hold the robot still at the end of each waiting region. Each wait is
+  /// only looked for inside its own path's part of the trajectory.
+  void _addWaits(PathPlannerTrajectory traj, List<int> pathStarts) {
     if (_viewMode != 2) return;
-    int from = 0;
-    for (final p in widget.autoPaths) {
+    final int originalLength = traj.states.length;
+    int inserted = 0;
+    for (int i = 0; i < widget.autoPaths.length && i < pathStarts.length; i++) {
+      final p = widget.autoPaths[i];
       final r = _waitRegion(p);
       if (r == null) continue;
-      from = insertWaitAt(
-          traj.states, p.samplePath(r.endPos), r.blockTimeoutSec!,
-          startIndex: from);
+      final int start = pathStarts[i] + inserted;
+      final int end =
+          (i + 1 < pathStarts.length ? pathStarts[i + 1] : originalLength) +
+              inserted;
+      insertWaitAt(traj.states, p.samplePath(r.endPos), r.blockTimeoutSec!,
+          startIndex: start, endIndex: end);
+      inserted = traj.states.length - originalLength;
     }
+  }
+
+  /// Go back to the normal view if the chosen one no longer applies
+  void _checkViewMode() {
+    if (_viewMode == 1 && !_hasPivot || _viewMode == 2 && !_hasContinue) {
+      _viewMode = 0;
+      _pivotPaths = null;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SplitAutoEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _pivotPaths = null;
+    _checkViewMode();
   }
 
   Widget _buildViewSelector() {
     if (!_hasPivot && !_hasContinue) return const SizedBox.shrink();
-    if (_viewMode == 1 && !_hasPivot || _viewMode == 2 && !_hasContinue) {
-      _viewMode = 0;
-    }
     return Positioned(
       top: 8,
       left: _treeOnRight ? 8 : null,
@@ -127,19 +159,33 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: SegmentedButton<int>(
-            segments: [
-              const ButtonSegment(value: 0, label: Text('Normal')),
-              if (_hasPivot)
-                const ButtonSegment(value: 1, label: Text('Pivot')),
-              if (_hasContinue)
-                const ButtonSegment(value: 2, label: Text('Continue')),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SegmentedButton<int>(
+                segments: [
+                  const ButtonSegment(value: 0, label: Text('Normal')),
+                  if (_hasPivot)
+                    const ButtonSegment(value: 1, label: Text('Pivot')),
+                  if (_hasContinue)
+                    const ButtonSegment(value: 2, label: Text('Continue')),
+                ],
+                selected: {_viewMode},
+                onSelectionChanged: (choice) {
+                  setState(() {
+                    _viewMode = choice.first;
+                    _pivotPaths = null;
+                  });
+                  _simulateAuto();
+                },
+              ),
+              if (_pivotCutsAuto)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4, left: 4),
+                  child: Text('Shown up to where the robot pivots',
+                      style: TextStyle(fontSize: 12)),
+                ),
             ],
-            selected: {_viewMode},
-            onSelectionChanged: (choice) {
-              setState(() => _viewMode = choice.first);
-              _simulateAuto();
-            },
           ),
         ),
       ),
@@ -182,6 +228,7 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
   @override
   Widget build(BuildContext context) {
     ColorScheme colorScheme = Theme.of(context).colorScheme;
+    _checkViewMode();
 
     return Stack(
       children: [
@@ -348,11 +395,13 @@ class _SplitAutoEditorState extends State<SplitAutoEditor>
       RobotConfig config = RobotConfig.fromPrefs(widget.prefs);
 
       try {
+        final List<int> pathStarts = [];
         simPath = AutoSimulator.simulateAuto(
           _shownPaths(),
           config,
+          pathStarts: pathStarts,
         );
-        if (simPath != null) _addWaits(simPath);
+        if (simPath != null) _addWaits(simPath, pathStarts);
         if (!(simPath?.getTotalTimeSeconds().isFinite ?? false)) {
           simPath = null;
         }

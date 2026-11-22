@@ -45,6 +45,9 @@ class PathPainter extends CustomPainter {
 
   /// Waypoints up to this index in [pivotRoute] are the main path's own and can be highlighted
   final int pivotSplitIndex;
+
+  /// Draw the draggable corner dots on pickup zones. Only where they can be dragged.
+  final bool showZoneHandles;
   final int? hoveredRotTarget;
   final int? selectedRotTarget;
   final int? hoveredMarker;
@@ -82,6 +85,7 @@ class PathPainter extends CustomPainter {
     this.continueRegion,
     this.pivotRoute,
     this.pivotSplitIndex = -1,
+    this.showZoneHandles = false,
     this.hoveredRotTarget,
     this.selectedRotTarget,
     this.hoveredMarker,
@@ -787,6 +791,7 @@ class PathPainter extends CustomPainter {
 
       final double r = PathPainterUtil.uiPointSizeToPixels(
           (active ? zoneCornerSize : zoneCornerSize * 0.75) / 2, scale, fieldImage);
+      if (!showZoneHandles) continue;
       for (final c in corners) {
         canvas.drawCircle(c, r, Paint()..color = Colors.orange);
         canvas.drawCircle(

@@ -34,6 +34,9 @@ public final class ObstacleSettings {
    */
   public static void configure(
       ObstacleSource obstacleSource, Supplier<Pose2d> pose, Runnable stop, double staleAfterSec) {
+    if (obstacleSource instanceof com.pathplanner.lib.detection.Camera camera) {
+      camera.setDefaultTargetHeight(com.pathplanner.lib.BackupPaths.ROBOT_TARGET_HEIGHT);
+    }
     source = obstacleSource;
     poseSupplier = pose;
     stopDrive = stop;
@@ -67,6 +70,22 @@ public final class ObstacleSettings {
       BooleanSupplier divert, BooleanSupplier wait, Supplier<PathPlannerPath> divertPath) {
     divertEnabled = divert == null ? () -> true : divert;
     waitEnabled = wait == null ? () -> true : wait;
+    divertOverride = divertPath == null ? () -> null : divertPath;
+  }
+
+  /**
+   * Turn diverting and waiting on or off without changing the divert path override.
+   *
+   * @param divert when false, divert regions just follow the path. Null means always on.
+   * @param wait when false, regions never wait. Null means always on.
+   */
+  public static void setSwitches(BooleanSupplier divert, BooleanSupplier wait) {
+    divertEnabled = divert == null ? () -> true : divert;
+    waitEnabled = wait == null ? () -> true : wait;
+  }
+
+  /** Use this path instead of each region's own divert path. Null or a null result means none. */
+  public static void setDivertOverride(Supplier<PathPlannerPath> divertPath) {
     divertOverride = divertPath == null ? () -> null : divertPath;
   }
 

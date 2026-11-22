@@ -2,6 +2,22 @@
 
 Each version's notes show in the app under **What's new**, and on its GitHub release.
 
+## 1.4.0
+
+- New: one simple setup for robot code. `BackupPaths.setup(pose, stop)`, then `BackupPaths.watchForRobots(camera)` and `BackupPaths.pickUpGamePieces(camera, intakeCommand, hasPiece, intakeSubsystem)`.
+- New: `Camera` works with any camera. `Camera.limelight("name")` reads a Limelight neural detector pipeline with no extra library, `Camera.photon("name")` reads PhotonVision, and `Camera.fromAngles(...)` or `Camera.fromFieldPositions(...)` work with anything else.
+- New: say where a camera sits in plain numbers with `mountedAt(forward, left, height, tilt down, facing)`, and which model classes are red or blue robots with `redClasses(...)` and `blueClasses(...)`.
+- New: read any camera in robot code with `seesSomethingWithin(meters)`, `getClosest()` and `getSightings()`, and put it on a dashboard to see its status.
+- Changed: the example robot project and the READMEs use the new setup. Code written for 1.2 and 1.3 still works.
+- Fixed: PhotonVision distances for targets near the sides of the image. Placing a box on the floor now follows the exact camera ray, so a robot 46° off center is no longer placed over 1 m short.
+- Fixed: in the auto editor's Continue view, each wait is now shown in its own path. Pivot view stops where the robot pivots, since the next path starts back on the main route.
+- Fixed: the path editor goes back to the normal view when its pivot region changes or is deleted, instead of getting stuck or crashing.
+- Fixed: older paths get their pickup zone saved when opened, so the robot uses the same zone the app shows.
+- Fixed: zone corners can't be dragged so the zone folds over itself, changing a region's range keeps the zone's shape and can be undone, and redo works for region settings.
+- Fixed: the example robot project now uses library 1.4.0, and `camera_check.py` works again, with `mountedAt` numbers.
+- Changed: with `redClasses`/`blueClasses` set, only those classes count as robots. The Driver Station warns if paths with regions are built before `BackupPaths.setup(...)`.
+- Update the robot library to PathplannerLib-BackupPaths 1.4.0. PhotonLib is only needed for PhotonVision cameras.
+
 ## 1.3.0
 
 - Fixed: the Path Regions list no longer closes when you add a region. The new region opens and is selected right away, so its part of the path shows on the field.

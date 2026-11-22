@@ -37,7 +37,11 @@ import org.photonvision.targeting.TargetCorner;
  * GamePieceSettings.configure(
  *     pieces, intake::runCommand, intake::hasPiece, 0.3, 3.0, 180, intake);
  * }</pre>
+ *
+ * @deprecated Simpler: {@code Camera.photon("name").mountedAt(...)} with {@link
+ *     com.pathplanner.lib.BackupPaths}. This class still works.
  */
+@Deprecated
 public class PhotonGamePieceDetector implements GamePieceSource {
   private final PhotonCamera camera;
   private final Transform3d robotToCamera;

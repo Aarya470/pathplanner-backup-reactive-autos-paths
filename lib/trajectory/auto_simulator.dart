@@ -5,8 +5,11 @@ import 'package:pathplanner/util/wpimath/geometry.dart';
 import 'package:pathplanner/util/wpimath/kinematics.dart';
 
 class AutoSimulator {
+  /// Simulate the paths one after another. If [pathStarts] is given, the index of each path's
+  /// first state is added to it, in order.
   static PathPlannerTrajectory? simulateAuto(
-      List<PathPlannerPath> paths, RobotConfig robotConfig) {
+      List<PathPlannerPath> paths, RobotConfig robotConfig,
+      {List<int>? pathStarts}) {
     if (paths.isEmpty) return null;
 
     List<TrajectoryState> allStates = [];
@@ -22,6 +25,7 @@ class AutoSimulator {
           startingRotation: startPose.rotation,
           robotConfig: robotConfig);
 
+      pathStarts?.add(allStates.length);
       num startTime = allStates.isNotEmpty ? allStates.last.timeSeconds : 0;
       for (TrajectoryState s in simPath.states) {
         s.timeSeconds += startTime;
