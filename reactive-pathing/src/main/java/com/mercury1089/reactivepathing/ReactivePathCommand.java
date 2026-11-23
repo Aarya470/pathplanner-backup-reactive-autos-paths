@@ -1,12 +1,10 @@
 package com.mercury1089.reactivepathing;
 
-import com.mercury1089.vision.Camera;
-import com.mercury1089.vision.Sighting;
-import com.mercury1089.vision.TeamColor;
+import com.mercury1089.detection.Sighting;
 import com.pathplanner.lib.events.EventScheduler;
-import com.pathplanner.lib.path.PathConstraints;
 import com.pathplanner.lib.path.PathPlannerPath;
 import com.pathplanner.lib.path.PathPoint;
+import com.pathplanner.lib.util.FlippingUtil;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
@@ -19,59 +17,43 @@ import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.Subsystem;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.function.BooleanSupplier;
 
 /**
- * Follows a path that has regions, reacting to what the cameras see. Made for you by
- * ReactivePathing when an auto uses a path with regions.
+ * Follows a path that has regions, reacting to what the cameras see. ReactivePathing makes one of
+ * these for each path with regions in an auto.
  *
  * <p>It works in steps:
  *
  * <ol>
  *   <li>FOLLOWING_PATH: follow the path, checking each region every loop.
  *   <li>WAITING_FOR_ROBOT: a robot blocked a region that has a wait time. Stand still until the
- *       wait is over, then go on, or divert if the robot is still there.
+ *       wait is over, then go on (or divert, if the robot is still there).
  *   <li>PICKING_UP: a game piece is in a region's zone. Drive to it with the intake running.
- *   <li>GOING_BACK_TO_PATH: after a pickup, drive back to the path where the region ends, then
- *       follow the rest of the path.
- *   <li>DIVERTING: follow the region's divert path instead of the rest of the main path.
+ *   <li>GOING_BACK_TO_PATH: after a pickup, drive back to where the region ends, then follow the
+ *       rest of the path.
+ *   <li>DIVERTING: follow the region's divert path instead of the rest of the path.
  *   <li>FINISHED
  * </ol>
  *
- * <p>Each step has its own command (a path follower, or a pathfinder). This command runs that
- * command itself, by calling its initialize(), execute(), isFinished() and end() each loop, instead
- * of scheduling it. That way the auto sees one command from start to end, and nothing else can
- * take the drivetrain in between.
+ * <p>Each step has its own command (a path follower or a pathfinder). This command runs it by hand,
+ * calling its initialize(), execute(), isFinished() and end(). That way the auto sees one command
+ * from start to end, and nothing else can take the drivetrain in between.
  *
- * <p>When the robot stops or leaves the path and comes back, the rest of the path is followed from
- * where it joins. Event markers on the part that was skipped don't run, and marker commands still
- * running when the robot stopped (such as one started with a zone) are ended. Zones that cover the
- * join point start again.
+ * <p>When the robot leaves the path and comes back, it follows the rest of the path from where it
+ * joins. Event markers on the part it skipped don't run.
  */
 public class ReactivePathCommand extends Command {
-  /** How close a robot must be to the region's part of the path to count as "in the way" */
+  /** A robot this close to the region's part of the path is "in the way", in meters */
   static final double BLOCKING_DISTANCE = 0.6;
 
-  /**
-   * How far ahead along the path to look for the robot each loop, in meters. Looking only a little
-   * ahead keeps out-and-back paths from jumping to the way back.
-   */
+  /** How far ahead along the path to look for the robot each loop, in meters */
   static final double SEARCH_AHEAD_METERS = 1.0;
 
-  /** One region, and what has happened with it in this run */
-  private static class RegionState {
-    final Region region;
-    final RegionAction action; // the region's action, or CONTINUE if diverting is switched off
-    final RobotRegionWatcher watcher; // only used by "robot in the way" regions
-    boolean done = false; // true once the region has reacted, or the robot drove past it
+  /** After reaching a game piece, keep the intake running this long (if there's no hasGamePiece) */
+  static final double HOLD_STILL_SECONDS = 0.5;
 
-    RegionState(Region region, RegionAction action, RobotRegionWatcher watcher) {
-      this.region = region;
-      this.action = action;
-      this.watcher = watcher;
-    }
-  }
+  /** Give up on a pickup after this long */
+  static final double MAX_PICKUP_SECONDS = 3.0;
 
   private enum Step {
     FOLLOWING_PATH,
@@ -82,115 +64,114 @@ public class ReactivePathCommand extends Command {
     FINISHED
   }
 
+  /** One region, and what has happened with it so far */
+  private static class RegionState {
+    final Region region;
+    boolean done = false; // it reacted already, or the robot drove past it
+    boolean robotSeen = false; // robot regions: a robot was in the way while we were in the region
+
+    RegionState(Region region) {
+      this.region = region;
+    }
+  }
+
   private final PathPlannerPath path;
   private final List<Region> regions;
+  private final List<RegionState> regionStates = new ArrayList<>();
 
-  // The path's points, drawn on the blue side, where each one is along the path (waypoint
-  // relative), and how far along the path each one is in meters
-  private final List<Translation2d> bluePoints = new ArrayList<>();
+  // The path's points, as drawn (on the blue side): where each one is, where it is along the path
+  // (waypoint relative), and how far along the path it is in meters
+  private final List<Translation2d> points = new ArrayList<>();
   private final List<Double> pointPositions = new ArrayList<>();
   private final List<Double> pointDistances = new ArrayList<>();
 
-  // What is happening in this run
   private Step step;
   private Command current; // the command for the current step
   private boolean currentFinished;
-  private int lastIndex; // the path point the robot was at, last time we looked
+  private int lastPointIndex; // the path point the robot was closest to last time
+  private RegionState activeRegion; // the region we are waiting at or picking up for
+  private double waitStartTime;
   private double rejoinPos; // where the robot joins the path again after a pickup
   private boolean finishAfterGoingBack;
-  private RegionState activeRegion; // the region that started the current step
-  private Command runningIntake; // the intake command we started, or null
-  private boolean intakeRunByHand; // true if we run runningIntake ourselves, like the steps
-  private final List<RegionState> regionStates = new ArrayList<>();
+  private Command intake; // the intake command we started, or null
+  private boolean intakeRunByHand; // true if we run the intake command ourselves
 
-  /**
-   * @param path the path, as the auto gives it (it may be mirrored)
-   * @param regions the path's regions, already mirrored if the path is
-   */
   public ReactivePathCommand(PathPlannerPath path, List<Region> regions) {
     this.path = path;
     this.regions = regions;
-
     for (PathPoint point : path.getAllPathPoints()) {
-      bluePoints.add(point.position);
+      points.add(point.position);
       pointPositions.add(point.waypointRelativePos);
       pointDistances.add(point.distanceAlongPath);
     }
 
-    // This command runs the path follower and the event markers itself, so it needs all of their
-    // subsystems. It doesn't need the intake: the intake command is started on its own (see
-    // startIntake), so autos can still run the intake alongside this path.
-    addRequirements(ReactivePathing.getDriveSubsystems());
+    // We run the path follower and its event markers ourselves, so we need their subsystems.
+    // We don't need the intake: its command is started separately (see startIntake).
+    addRequirements(ReactivePathing.driveSubsystems);
     addRequirements(EventScheduler.getSchedulerRequirements(path));
     for (Region region : regions) {
-      PathPlannerPath divert = ReactivePathing.divertPathFor(region);
-      if (divert != null) {
-        addRequirements(EventScheduler.getSchedulerRequirements(divert));
+      if (region.divertPath != null) {
+        addRequirements(EventScheduler.getSchedulerRequirements(region.divertPath));
       }
     }
   }
 
-  // ------------------------------------------------------------------ the command
+  // ---------------------------------------------------------------- the command
 
   @Override
   public void initialize() {
     current = null;
     currentFinished = true;
-    finishAfterGoingBack = false;
     activeRegion = null;
-    runningIntake = null;
-
-    // Fresh rules for each region. Switches are read now, when the path starts.
+    intake = null;
+    finishAfterGoingBack = false;
     regionStates.clear();
     for (Region region : regions) {
-      double waitSeconds = region.getWaitSeconds();
-      if (!ReactivePathing.waitAllowed()) {
-        waitSeconds = 0;
-      }
-      RegionAction action = region.getAction();
-      if (!ReactivePathing.divertAllowed()) {
-        action = RegionAction.CONTINUE;
-      }
-      regionStates.add(
-          new RegionState(region, action, new RobotRegionWatcher(waitSeconds, action)));
+      regionStates.add(new RegionState(region));
     }
-
     startFollowing(0.0);
   }
 
   @Override
   public void execute() {
     if (step == Step.FOLLOWING_PATH) {
-      boolean reacted = checkRegions();
-      if (reacted) {
-        return;
+      if (checkRegions()) {
+        return; // a region reacted and started a new step
       }
       runCurrent();
       if (currentFinished) {
-        // The path is done. A region that ends at the very end of the path gets one last check.
-        boolean reactedAtTheEnd = checkRegions();
-        if (!reactedAtTheEnd) {
+        // The path is done. A region that ends right at the end of the path gets one last check.
+        if (!checkRegions()) {
           setStep(Step.FINISHED);
         }
       }
+
     } else if (step == Step.WAITING_FOR_ROBOT) {
       ReactivePathing.stopDriving();
-      double pos = currentPathPosition();
-      RobotRegionWatcher.Decision decision = updateWatcher(activeRegion, pos);
-      if (decision == RobotRegionWatcher.Decision.RESUME) {
-        startFollowing(pos);
-      } else if (decision == RobotRegionWatcher.Decision.DIVERT) {
-        if (!startDiverting(activeRegion.region)) {
-          startFollowing(pos);
-        }
+      Region region = activeRegion.region;
+      double waited = Timer.getFPGATimestamp() - waitStartTime;
+      if (waited < region.waitSeconds) {
+        return; // keep waiting
       }
+      // Done waiting. If the robot is still there, divert (if the region says to).
+      boolean stillBlocked = isBlocked(region);
+      if (stillBlocked && region.action == Region.Action.DIVERT && startDiverting(region)) {
+        return;
+      }
+      startFollowing(currentPathPosition());
+
     } else if (step == Step.PICKING_UP) {
       runCurrent();
       runIntakeByHand();
       if (currentFinished) {
         stopIntake();
-        afterPickup(activeRegion);
+        Region region = activeRegion.region;
+        if (region.action == Region.Action.DIVERT && startDiverting(region)) {
+          return;
+        }
+        startGoingBack(region);
       }
+
     } else if (step == Step.GOING_BACK_TO_PATH) {
       runCurrent();
       if (currentFinished) {
@@ -200,6 +181,7 @@ public class ReactivePathCommand extends Command {
           startFollowing(rejoinPos);
         }
       }
+
     } else if (step == Step.DIVERTING) {
       runCurrent();
       if (currentFinished) {
@@ -222,52 +204,192 @@ public class ReactivePathCommand extends Command {
     }
   }
 
-  // ------------------------------------------------------------------ starting each step
+  // ---------------------------------------------------------------- checking regions
+
+  /**
+   * Check every region that hasn't reacted yet.
+   *
+   * @return true if one reacted (and started a new step)
+   */
+  private boolean checkRegions() {
+    double pos = currentPathPosition();
+    for (RegionState state : regionStates) {
+      if (state.done) {
+        continue;
+      }
+      boolean reacted;
+      if (state.region.trigger == Region.Trigger.GAME_PIECE) {
+        reacted = checkGamePieceRegion(state, pos);
+      } else {
+        reacted = checkRobotRegion(state, pos);
+      }
+      if (reacted) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * A "robot in the way" region. A robot seen in the region is remembered. At the end of the
+   * region: wait (if it has a wait time), or divert (if it says to), or just keep going.
+   */
+  private boolean checkRobotRegion(RegionState state, double pos) {
+    Region region = state.region;
+    if (ReactivePathing.robotCamera == null) {
+      return false;
+    }
+    if (!state.robotSeen) {
+      state.robotSeen = region.contains(pos) && isBlocked(region);
+    }
+    // ">=" so a region that ends right at the end of the path still gets here
+    boolean atRegionEnd = pos >= region.endPos;
+    if (!state.robotSeen || !atRegionEnd) {
+      return false;
+    }
+
+    state.done = true;
+    if (region.waitSeconds > 0) {
+      stopCurrent();
+      activeRegion = state;
+      waitStartTime = Timer.getFPGATimestamp();
+      setStep(Step.WAITING_FOR_ROBOT);
+      return true;
+    }
+    if (region.action == Region.Action.DIVERT) {
+      return startDiverting(region);
+    }
+    return false;
+  }
+
+  /** A game piece region: if a piece is in the zone while we're in the region, go get it. */
+  private boolean checkGamePieceRegion(RegionState state, double pos) {
+    Region region = state.region;
+    if (pos > region.endPos) {
+      state.done = true; // drove through without seeing a piece
+      return false;
+    }
+    if (!region.contains(pos) || !canPickUp()) {
+      return false;
+    }
+    Translation2d piece = findGamePiece(region);
+    if (piece == null) {
+      return false;
+    }
+    state.done = true;
+    activeRegion = state;
+    startPickup(piece);
+    return true;
+  }
+
+  /** @return true if a robot that counts for this region is near the region's part of the path */
+  private boolean isBlocked(Region region) {
+    for (Sighting robot : ReactivePathing.robotCamera.getRobots()) {
+      Translation2d robotPosition = robot.getFieldPosition();
+      if (robotPosition == null || !teamCounts(region.team, robot.getColor())) {
+        continue;
+      }
+      for (int i = 0; i < points.size(); i++) {
+        boolean inRegion = region.contains(pointPositions.get(i));
+        if (inRegion && onField(points.get(i)).getDistance(robotPosition) <= BLOCKING_DISTANCE) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** @return true if a robot of this color counts for a region set to this team */
+  static boolean teamCounts(Region.Team team, Sighting.Color robotColor) {
+    if (team == Region.Team.ANY) {
+      return true;
+    }
+    Sighting.Color ourColor = Sighting.Color.UNKNOWN;
+    if (DriverStation.getAlliance().isPresent()) {
+      boolean red = DriverStation.getAlliance().get() == DriverStation.Alliance.Red;
+      ourColor = red ? Sighting.Color.RED : Sighting.Color.BLUE;
+    }
+    if (ourColor == Sighting.Color.UNKNOWN || robotColor == Sighting.Color.UNKNOWN) {
+      return false; // can't tell, so it doesn't count
+    }
+    if (team == Region.Team.TEAMMATE) {
+      return robotColor == ourColor;
+    }
+    return robotColor != ourColor;
+  }
+
+  private boolean canPickUp() {
+    if (ReactivePathing.gamePieceCamera == null) {
+      return false;
+    }
+    // Already holding a piece: don't go get another
+    return ReactivePathing.hasGamePiece == null || !ReactivePathing.hasGamePiece.getAsBoolean();
+  }
+
+  /** @return the closest game piece inside the region's zone, or null if there is none */
+  private Translation2d findGamePiece(Region region) {
+    Translation2d robot = ReactivePathing.robotPose.get().getTranslation();
+
+    // The zone is drawn on the blue side, like paths
+    List<Translation2d> zone = new ArrayList<>();
+    for (Translation2d corner : region.pickupZone) {
+      zone.add(onField(corner));
+    }
+
+    Translation2d best = null;
+    for (Sighting piece : ReactivePathing.gamePieceCamera.getGamePieces()) {
+      Translation2d at = piece.getFieldPosition();
+      if (at == null) {
+        continue;
+      }
+      boolean inZone;
+      if (zone.size() >= 3) {
+        inZone = PathTools.isInside(zone, at);
+      } else {
+        inZone = at.getDistance(robot) <= Region.NO_ZONE_PIECE_DISTANCE; // old regions with no zone
+      }
+      if (inZone && (best == null || at.getDistance(robot) < best.getDistance(robot))) {
+        best = at;
+      }
+    }
+    return best;
+  }
+
+  // ---------------------------------------------------------------- starting each step
 
   /** Follow the path from a position along it to the end. */
   private void startFollowing(double fromPos) {
-    PathPlannerPath rest = PathCutter.restOfPath(path, fromPos);
+    PathPlannerPath rest = PathTools.restOfPath(path, fromPos);
     if (rest == null) {
       stopCurrent();
       setStep(Step.FINISHED);
       return;
     }
-    lastIndex = firstPointAtOrAfter(fromPos);
-    if (lastIndex < 0) {
-      lastIndex = pointPositions.size() - 1;
-    }
-    startCommand(ReactivePathing.followPathNormally(rest));
+    lastPointIndex = firstPointAtOrAfter(fromPos);
+    startCommand(ReactivePathing.followPath(rest));
     setStep(Step.FOLLOWING_PATH);
   }
 
   /** Drive to a game piece with the intake running. */
-  private void startPickup(RegionState state, Translation2d piece) {
-    Pose2d robot = ReactivePathing.getRobotPose().get();
-
+  private void startPickup(Translation2d piece) {
     // Face the piece with the side of the robot that has the intake
-    Rotation2d towardPiece = piece.minus(robot.getTranslation()).getAngle();
-    Rotation2d heading = towardPiece.plus(Rotation2d.fromDegrees(ReactivePathing.getIntakeFacingDegrees()));
-
-    // Step 1: drive to the piece. It is a real field position, so it is not flipped.
-    Command driveToPiece =
-        ReactivePathing.pathfindToPose(new Pose2d(piece, heading), path.getGlobalConstraints());
-
-    // Step 2: once there, stand still for a moment so the intake can grab it
-    Command holdStill =
-        Commands.run(() -> ReactivePathing.stopDriving())
-            .withTimeout(ReactivePathing.getIntakeAfterArrivingSeconds());
-    Command pickup = Commands.sequence(driveToPiece, holdStill);
-
-    // Stop early as soon as the piece is in
-    BooleanSupplier hasPiece = ReactivePathing.getHasGamePiece();
-    if (hasPiece != null) {
-      pickup = pickup.until(hasPiece);
+    Pose2d robot = ReactivePathing.robotPose.get();
+    Rotation2d heading = piece.minus(robot.getTranslation()).getAngle();
+    if (ReactivePathing.intakeOnBack) {
+      heading = heading.plus(Rotation2d.k180deg);
     }
 
-    // Never take longer than this, even if the piece is never picked up
-    pickup = pickup.withTimeout(ReactivePathing.getMaxPickupSeconds());
+    // Drive to the piece (a real field position, so it isn't flipped), then hold still a moment
+    Command pickup =
+        Commands.sequence(
+            ReactivePathing.pathfindToPose(new Pose2d(piece, heading), path.getGlobalConstraints()),
+            Commands.run(ReactivePathing::stopDriving).withTimeout(HOLD_STILL_SECONDS));
+    // Stop as soon as the piece is in, and never take too long
+    if (ReactivePathing.hasGamePiece != null) {
+      pickup = pickup.until(ReactivePathing.hasGamePiece);
+    }
+    pickup = pickup.withTimeout(MAX_PICKUP_SECONDS);
 
-    activeRegion = state;
     ReactivePathing.stopDriving(); // the pathfinder takes a moment to start: don't coast meanwhile
     startCommand(pickup);
     startIntake();
@@ -275,147 +397,39 @@ public class ReactivePathCommand extends Command {
   }
 
   /**
-   * Start the team's intake command for a pickup. It is never made part of this command (that
-   * would clash with autos that use the intake too). Instead, for each subsystem it needs:
-   *
-   * <ul>
-   *   <li>Free (or only running its default command): fine.
-   *   <li>Used by the auto this path is part of (the auto needs every subsystem any of its commands
-   *       use, so this is common): fine, but the auto owns it, so we run the intake command
-   *       ourselves, like the steps.
-   *   <li>Used by some other command: don't start the intake, because starting it would cancel
-   *       that command, which could even be the whole auto.
-   * </ul>
-   *
-   * If every subsystem is free, the intake command is scheduled normally.
-   */
-  private void startIntake() {
-    runningIntake = null;
-    intakeRunByHand = false;
-    CommandScheduler scheduler = CommandScheduler.getInstance();
-
-    Command intakeCommand = ReactivePathing.makeIntakeCommand();
-    if (scheduler.isComposed(intakeCommand)) {
-      DriverStation.reportWarning(
-          "Reactive Pathing: the intake command is also used inside another command group, so it"
-              + " can't be started. Give pickUpGamePieces(...) a method that makes a new command"
-              + " each time, such as intake::intakeCommand.",
-          false);
-      return;
-    }
-
-    // Our auto: whatever is running this command (it holds the drivetrain)
-    Command ourAuto = null;
-    Subsystem[] drive = ReactivePathing.getDriveSubsystems();
-    if (drive.length > 0) {
-      ourAuto = scheduler.requiring(drive[0]);
-    }
-
-    boolean ourAutoHasIt = false;
-    for (Subsystem subsystem : intakeCommand.getRequirements()) {
-      Command using = scheduler.requiring(subsystem);
-      if (using == null || using == subsystem.getDefaultCommand()) {
-        continue; // free
-      }
-      if (using == ourAuto) {
-        ourAutoHasIt = true;
-        continue;
-      }
-      DriverStation.reportWarning(
-          "Reactive Pathing: didn't start the intake for a pickup, because "
-              + using.getName()
-              + " is using "
-              + subsystem.getName(),
-          false);
-      return;
-    }
-
-    runningIntake = intakeCommand;
-    if (ourAutoHasIt) {
-      intakeRunByHand = true;
-      intakeCommand.initialize();
-    } else {
-      scheduler.schedule(intakeCommand);
-    }
-  }
-
-  /** Run the intake command for one loop, if we are running it ourselves. */
-  private void runIntakeByHand() {
-    if (runningIntake == null || !intakeRunByHand) {
-      return;
-    }
-    runningIntake.execute();
-    if (runningIntake.isFinished()) {
-      runningIntake.end(false);
-      runningIntake = null;
-    }
-  }
-
-  /** Stop the intake command we started, if it is still running. */
-  private void stopIntake() {
-    if (runningIntake == null) {
-      return;
-    }
-    if (intakeRunByHand) {
-      runningIntake.end(true);
-    } else {
-      CommandScheduler.getInstance().cancel(runningIntake);
-    }
-    runningIntake = null;
-  }
-
-  /** After a pickup: divert, or go back to the path. */
-  private void afterPickup(RegionState state) {
-    if (state.action == RegionAction.DIVERT && startDiverting(state.region)) {
-      return;
-    }
-    startGoingBack(state.region);
-  }
-
-  /**
-   * Drive back to the path where the region ends, facing the way the path faces there. Then follow
-   * the rest of the path. It arrives stopped: the pathfinder could arrive from any direction, so
-   * arriving at speed could make the robot swerve onto the path.
+   * Drive back to the path where the region ends, facing the way the path faces there, then follow
+   * the rest of the path. It arrives stopped, so it doesn't swerve onto the path.
    */
   private void startGoingBack(Region region) {
-    int join = firstPointAtOrAfter(region.getEndPos());
-    boolean nothingLeft = join < 0 || join >= bluePoints.size() - 1;
-    PathConstraints constraints = path.getGlobalConstraints();
-    activeRegion = null;
-    ReactivePathing.stopDriving(); // the pathfinder takes a moment to start: don't coast meanwhile
+    int join = firstPointAtOrAfter(region.endPos);
+    boolean atTheEnd = join >= points.size() - 1;
 
-    if (nothingLeft) {
+    Pose2d target;
+    if (atTheEnd) {
       // The region ends at the end of the path: just go to the end
-      Translation2d end = bluePoints.get(bluePoints.size() - 1);
-      Pose2d endPose = new Pose2d(end, path.getGoalEndState().rotation());
+      target = new Pose2d(points.get(points.size() - 1), path.getGoalEndState().rotation());
       finishAfterGoingBack = true;
-      startCommand(ReactivePathing.pathfindToPoseFlipped(endPose, constraints, 0.0));
-      setStep(Step.GOING_BACK_TO_PATH);
-      return;
-    }
-
-    Translation2d joinPoint = bluePoints.get(join);
-    Translation2d nextPoint = bluePoints.get(join + 1);
-    Rotation2d travelDirection = nextPoint.minus(joinPoint).getAngle();
-
-    // Holonomic robots face the way the path faces there. Others face the way the path goes
-    // (backwards, if the path is driven in reverse).
-    Rotation2d heading = travelDirection;
-    if (!ReactivePathing.isHolonomic() && path.isReversed()) {
-      heading = travelDirection.plus(Rotation2d.k180deg);
-    }
-    if (ReactivePathing.isHolonomic()) {
-      Rotation2d pathRotation = PathMath.rotationAt(path, region.getEndPos());
-      if (pathRotation != null) {
-        heading = pathRotation;
+    } else {
+      Translation2d joinPoint = points.get(join);
+      // Face the way the path goes there (backwards, if the path is driven in reverse)...
+      Rotation2d heading = points.get(join + 1).minus(joinPoint).getAngle();
+      if (path.isReversed()) {
+        heading = heading.plus(Rotation2d.k180deg);
       }
+      // ...or, for swerve, the way the path says to face
+      if (ReactivePathing.robotConfig.isHolonomic) {
+        Rotation2d pathRotation = PathTools.rotationAt(path, region.endPos);
+        if (pathRotation != null) {
+          heading = pathRotation;
+        }
+      }
+      target = new Pose2d(joinPoint, heading);
+      rejoinPos = pointPositions.get(join);
+      finishAfterGoingBack = false;
     }
 
-    // Follow the rest of the path from exactly the point we drive to
-    rejoinPos = pointPositions.get(join);
-    finishAfterGoingBack = false;
-    startCommand(
-        ReactivePathing.pathfindToPoseFlipped(new Pose2d(joinPoint, heading), constraints, 0.0));
+    ReactivePathing.stopDriving(); // the pathfinder takes a moment to start: don't coast meanwhile
+    startCommand(ReactivePathing.pathfindToPoseFlipped(target, path.getGlobalConstraints()));
     setStep(Step.GOING_BACK_TO_PATH);
   }
 
@@ -425,7 +439,7 @@ public class ReactivePathCommand extends Command {
    * @return false if the region has no divert path
    */
   private boolean startDiverting(Region region) {
-    PathPlannerPath divert = ReactivePathing.divertPathFor(region);
+    PathPlannerPath divert = region.divertPath;
     if (divert == null) {
       DriverStation.reportWarning(
           "Reactive Pathing: a region on " + path.name + " is set to divert but has no divert path",
@@ -438,204 +452,92 @@ public class ReactivePathCommand extends Command {
     return true;
   }
 
-  // ------------------------------------------------------------------ checking regions
+  // ---------------------------------------------------------------- the intake
 
   /**
-   * Check every region that isn't done yet.
+   * Start the intake command for a pickup. It is never made part of this command (that would clash
+   * with autos that use the intake too). For each subsystem it needs:
    *
-   * @return true if a region reacted (and started a new step)
+   * <ul>
+   *   <li>Free (or only running its default command): we schedule the intake command.
+   *   <li>Held by our own auto (an auto holds every subsystem its commands use): we run the intake
+   *       command by hand, like the steps.
+   *   <li>Held by some other command: we don't start the intake, so that command isn't cancelled.
+   * </ul>
    */
-  private boolean checkRegions() {
-    double pos = currentPathPosition();
+  private void startIntake() {
+    intake = null;
+    if (ReactivePathing.intakeCommand == null) {
+      return;
+    }
+    Command command = ReactivePathing.intakeCommand.get();
+    if (command == null) {
+      return;
+    }
+    CommandScheduler scheduler = CommandScheduler.getInstance();
+    if (scheduler.isComposed(command)) {
+      DriverStation.reportWarning(
+          "Reactive Pathing: can't start the intake. Give pickUpGamePieces(...) a method that makes"
+              + " a new command each time, such as intake::intakeCommand.",
+          false);
+      return;
+    }
 
-    for (RegionState state : regionStates) {
-      if (state.done) {
+    Command ourAuto = null; // whatever is running this command (it holds the drivetrain)
+    if (ReactivePathing.driveSubsystems.length > 0) {
+      ourAuto = scheduler.requiring(ReactivePathing.driveSubsystems[0]);
+    }
+    boolean ourAutoHasIt = false;
+    for (Subsystem subsystem : command.getRequirements()) {
+      Command using = scheduler.requiring(subsystem);
+      if (using == null || using == subsystem.getDefaultCommand()) {
+        continue; // free
+      }
+      if (using == ourAuto) {
+        ourAutoHasIt = true;
         continue;
       }
-      Region region = state.region;
-
-      if (region.isGamePieceRegion()) {
-        if (pos > region.getEndPos()) {
-          state.done = true; // drove through without seeing a piece
-          continue;
-        }
-        if (!region.contains(pos) || !canPickUp()) {
-          continue;
-        }
-        Translation2d piece = findGamePiece(region);
-        if (piece != null) {
-          state.done = true;
-          startPickup(state, piece);
-          return true;
-        }
-        continue;
-      }
-
-      // A "robot in the way" region
-      if (ReactivePathing.getRobotCamera() == null) {
-        continue;
-      }
-      RobotRegionWatcher.Decision decision = updateWatcher(state, pos);
-      if (state.watcher.isDone()) {
-        state.done = true;
-      }
-      if (decision == RobotRegionWatcher.Decision.STOP) {
-        stopCurrent();
-        ReactivePathing.stopDriving();
-        activeRegion = state;
-        setStep(Step.WAITING_FOR_ROBOT);
-        return true;
-      }
-      if (decision == RobotRegionWatcher.Decision.DIVERT) {
-        if (startDiverting(region)) {
-          return true;
-        }
-      }
+      DriverStation.reportWarning(
+          "Reactive Pathing: didn't start the intake, because " + using.getName() + " is using it",
+          false);
+      return;
     }
-    return false;
+
+    intake = command;
+    intakeRunByHand = ourAutoHasIt;
+    if (intakeRunByHand) {
+      intake.initialize();
+    } else {
+      scheduler.schedule(intake);
+    }
   }
 
-  /**
-   * @param pos where the robot is along the path
-   */
-  private RobotRegionWatcher.Decision updateWatcher(RegionState state, double pos) {
-    Region region = state.region;
-    boolean inRegion = region.contains(pos);
-    // ">=" so a region that ends exactly at the end of the path still counts as reached
-    boolean pastEnd = pos >= region.getEndPos();
-    boolean blocked = isBlocked(region);
-    return state.watcher.update(inRegion, pastEnd, blocked, Timer.getFPGATimestamp());
+  /** Run the intake command for one loop, if we are running it by hand. */
+  private void runIntakeByHand() {
+    if (intake == null || !intakeRunByHand) {
+      return;
+    }
+    intake.execute();
+    if (intake.isFinished()) {
+      intake.end(false);
+      intake = null;
+    }
   }
 
-  /** @return true if a robot that counts for this region is near the region's part of the path */
-  private boolean isBlocked(Region region) {
-    Camera camera = ReactivePathing.getRobotCamera();
-    if (camera == null) {
-      return false;
+  /** Stop the intake command we started, if it is still running. */
+  private void stopIntake() {
+    if (intake == null) {
+      return;
     }
-    for (Sighting robot : camera.getRobots()) {
-      Translation2d robotPosition = robot.getFieldPosition();
-      if (robotPosition == null || !teamCounts(region.getTeam(), robot.getColor())) {
-        continue;
-      }
-      for (int i = 0; i < bluePoints.size(); i++) {
-        if (region.contains(pointPositions.get(i))) {
-          Translation2d pathPoint = fieldPosition(bluePoints.get(i));
-          if (pathPoint.getDistance(robotPosition) <= BLOCKING_DISTANCE) {
-            return true;
-          }
-        }
-      }
+    if (intakeRunByHand) {
+      intake.end(true);
+    } else {
+      CommandScheduler.getInstance().cancel(intake);
     }
-    return false;
+    intake = null;
   }
 
-  /** @return true if a robot of this color counts for a region set to this team */
-  static boolean teamCounts(RegionTeam team, TeamColor robotColor) {
-    if (team == RegionTeam.ANY) {
-      return true;
-    }
-    TeamColor ourColor = ourAlliance();
-    if (ourColor == TeamColor.UNKNOWN || robotColor == TeamColor.UNKNOWN) {
-      return false; // can't tell, so it doesn't count
-    }
-    if (team == RegionTeam.TEAMMATE) {
-      return robotColor == ourColor;
-    }
-    return robotColor != ourColor;
-  }
-
-  private boolean canPickUp() {
-    if (!ReactivePathing.pickupsAllowed() || ReactivePathing.getGamePieceCamera() == null) {
-      return false;
-    }
-    // Already holding a piece: don't go get another
-    BooleanSupplier hasPiece = ReactivePathing.getHasGamePiece();
-    return hasPiece == null || !hasPiece.getAsBoolean();
-  }
-
-  /** @return the closest game piece inside the region's zone, or null if there is none */
-  private Translation2d findGamePiece(Region region) {
-    Translation2d robot = ReactivePathing.getRobotPose().get().getTranslation();
-
-    // The zone is drawn on the blue side, like paths
-    List<Translation2d> zone = new ArrayList<>();
-    for (Translation2d corner : region.getPickupZone()) {
-      zone.add(fieldPosition(corner));
-    }
-
-    Translation2d best = null;
-    double bestDistance = Double.POSITIVE_INFINITY;
-    for (Sighting piece : ReactivePathing.getGamePieceCamera().getGamePieces()) {
-      Translation2d at = piece.getFieldPosition();
-      if (at == null) {
-        continue;
-      }
-      double distance = at.getDistance(robot);
-      boolean counts;
-      if (region.hasPickupZone()) {
-        counts = PathMath.isInside(zone, at);
-      } else {
-        counts = distance <= region.getMaxPieceDistance(); // old regions with no zone
-      }
-      if (counts && distance < bestDistance) {
-        best = at;
-        bestDistance = distance;
-      }
-    }
-    return best;
-  }
-
-  // ------------------------------------------------------------------ helpers
-
-  /**
-   * Where the robot is along the path, as a waypoint-relative position. It only looks a little
-   * ahead (1 m) of where the robot was last time, and never goes backwards. Call it once per loop.
-   */
-  private double currentPathPosition() {
-    Translation2d robot = ReactivePathing.getRobotPose().get().getTranslation();
-    List<Translation2d> fieldPoints = new ArrayList<>();
-    for (Translation2d point : bluePoints) {
-      fieldPoints.add(fieldPosition(point));
-    }
-    double lastDistance = pointDistances.get(lastIndex);
-    int index =
-        PathMath.closestPointIndex(
-            fieldPoints, pointDistances, robot, lastDistance, lastDistance + SEARCH_AHEAD_METERS);
-    if (index >= 0) {
-      lastIndex = index;
-    }
-    return pointPositions.get(lastIndex);
-  }
-
-  /** @return the index of the first path point at or after a position, or -1 */
-  private int firstPointAtOrAfter(double pos) {
-    for (int i = 0; i < pointPositions.size(); i++) {
-      if (pointPositions.get(i) >= pos) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  /** A position drawn on the blue side, on the real field (flipped when we are red). */
-  private static Translation2d fieldPosition(Translation2d bluePosition) {
-    if (ReactivePathing.shouldFlip()) {
-      return PathMath.flipToRed(bluePosition);
-    }
-    return bluePosition;
-  }
-
-  private static TeamColor ourAlliance() {
-    Optional<DriverStation.Alliance> alliance = DriverStation.getAlliance();
-    if (alliance.isEmpty()) {
-      return TeamColor.UNKNOWN;
-    }
-    if (alliance.get() == DriverStation.Alliance.Red) {
-      return TeamColor.RED;
-    }
-    return TeamColor.BLUE;
-  }
+  // ---------------------------------------------------------------- running a step's command
 
   /** Start a step's command, ending the one before it. */
   private void startCommand(Command command) {
@@ -657,7 +559,7 @@ public class ReactivePathCommand extends Command {
     }
   }
 
-  /** End the current command early, if it is still running, and stop the drivetrain. */
+  /** End the current command early, if it is still running. */
   private void stopCurrent() {
     if (current != null && !currentFinished) {
       current.end(true);
@@ -669,5 +571,47 @@ public class ReactivePathCommand extends Command {
   private void setStep(Step newStep) {
     step = newStep;
     SmartDashboard.putString("Reactive Pathing/Step", newStep.toString());
+  }
+
+  // ---------------------------------------------------------------- where the robot is
+
+  /**
+   * Where the robot is along the path (waypoint relative). It only looks a little ahead of where
+   * the robot was last time, and never goes backwards, so a path that comes back near itself
+   * doesn't confuse it.
+   */
+  private double currentPathPosition() {
+    Translation2d robot = ReactivePathing.robotPose.get().getTranslation();
+    double lastDistance = pointDistances.get(lastPointIndex);
+    double bestDistance = Double.POSITIVE_INFINITY;
+    for (int i = lastPointIndex; i < points.size(); i++) {
+      if (pointDistances.get(i) > lastDistance + SEARCH_AHEAD_METERS) {
+        break;
+      }
+      double distance = onField(points.get(i)).getDistance(robot);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        lastPointIndex = i;
+      }
+    }
+    return pointPositions.get(lastPointIndex);
+  }
+
+  /** @return the index of the first path point at or after a position (or the last point) */
+  private int firstPointAtOrAfter(double pos) {
+    for (int i = 0; i < pointPositions.size(); i++) {
+      if (pointPositions.get(i) >= pos) {
+        return i;
+      }
+    }
+    return pointPositions.size() - 1;
+  }
+
+  /** A position drawn on the blue side, on the real field (flipped when we are red). */
+  private static Translation2d onField(Translation2d bluePosition) {
+    if (ReactivePathing.shouldFlip.getAsBoolean()) {
+      return FlippingUtil.flipFieldPosition(bluePosition);
+    }
+    return bluePosition;
   }
 }

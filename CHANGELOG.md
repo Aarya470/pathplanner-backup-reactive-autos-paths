@@ -2,6 +2,16 @@
 
 Each version's notes show in the app under **What's new**, and on its GitHub release.
 
+## 2.1.0
+
+- Changed: the camera library is now **Robot Detection** (it was Mercury Vision), and it is much simpler. Install `https://aarya470.github.io/FRC-Robot-Vision/RobotDetection.json` and delete `MercuryVision.json`. See "Upgrading from 2.0.0" in the README.
+- Changed: imports are now `com.mercury1089.detection.Camera` and `com.mercury1089.detection.Sighting`.
+- Changed: the robot library is much simpler: 4 files instead of 11, in plain Java that is easy to read.
+- Changed: `ReactivePathing.pickUpGamePieces(camera, intakeCommand, hasPiece)` no longer takes the intake subsystem.
+- Changed: pickups use fixed timings: the intake keeps running 0.5 s after reaching a piece (when there is no `hasPiece`), and a pickup gives up after 3 s. A game piece region with no pickup zone counts pieces within 2 m; its own piece distance setting is no longer used. Draw a zone instead.
+- Changed: a region that can't be read now gives a warning and the path runs without regions, instead of stopping the robot code.
+- Removed: `setSwitches(...)`, `overrideDivertPath(...)`, `followPathNormally(...)` and the `LinearVelocity` versions of `pathfindToPose` and `pathfindToPoseFlipped` (give the end speed in meters per second).
+
 ## 2.0.0
 
 - Changed: the robot code now uses the **official PathplannerLib**. The modified library (PathplannerLib-BackupPaths) is replaced by two small libraries:

@@ -7,7 +7,7 @@ package frc.robot;
 import java.util.List;
 
 import com.mercury1089.reactivepathing.ReactivePathing;
-import com.mercury1089.vision.Camera;
+import com.mercury1089.detection.Camera;
 import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.PathPlannerAuto;
@@ -40,12 +40,11 @@ public class RobotContainer {
   // The robot's subsystems and commands are defined here...
   private final SwerveSubsystem swerve = new SwerveSubsystem();
 
-  // Object detection cameras, from Mercury Vision.
+  // Object detection cameras, from Robot Detection.
   // mountedAt(forward m, left m, height m, tilt down degrees, facing degrees), measured from the
   // robot's center on the floor. Facing: 0 = forward, 180 = backward.
   //
   // Using a Limelight? Swap Camera.photonVision("...") for Camera.limelight("limelight-name").
-  // Anything else? See Camera.fromAngles(...) and Camera.fromFieldPositions(...).
 
   /** Sees robots. In the model, class 1 is a red robot and class 2 is a blue robot. */
   private final Camera robotCamera = Camera.photonVision("DetectionCam")
@@ -96,7 +95,6 @@ public class RobotContainer {
         () -> Commands.print("Intake running").andThen(Commands.idle()),
         // Replace with your beam break, for example intake::hasPiece (null = run 0.5 s at the piece)
         null);
-        // Then add your intake subsystem as the last argument, for example: null, intake);
   }
 
   /**

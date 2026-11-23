@@ -4,8 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.mercury1089.vision.Camera;
-import com.mercury1089.vision.ThingType;
+import com.mercury1089.detection.Camera;
 import com.pathplanner.lib.commands.FollowPathCommand;
 import com.pathplanner.lib.config.ModuleConfig;
 import com.pathplanner.lib.config.PIDConstants;
@@ -145,13 +144,13 @@ public class SimulatedAutoTest extends WpilibTest {
         new GoalEndState(0, Rotation2d.kZero));
   }
 
-  static Region robotRegion(double waitSeconds, RegionAction action, RegionTeam team, PathPlannerPath divert) {
-    return new Region(0.3, 0.5, RegionTrigger.ROBOT, team, waitSeconds, action, divert, List.of(), 1.5);
+  static Region robotRegion(double waitSeconds, Region.Action action, Region.Team team, PathPlannerPath divert) {
+    return new Region(0.3, 0.5, Region.Trigger.ROBOT, team, waitSeconds, action, divert, List.of());
   }
 
   static Region pieceRegion(List<Translation2d> zone) {
     return new Region(
-        0.2, 0.6, RegionTrigger.GAME_PIECE, RegionTeam.ANY, 0, RegionAction.CONTINUE, null, zone, 1.5);
+        0.2, 0.6, Region.Trigger.GAME_PIECE, Region.Team.ANY, 0, Region.Action.CONTINUE, null, zone);
   }
 
   /** A 1.6 m square around (4.5, 5) */
@@ -164,14 +163,13 @@ public class SimulatedAutoTest extends WpilibTest {
   }
 
   void useCameras() {
-    Camera robots = Camera.fromFieldPositions(ThingType.ROBOT, () -> robotsOnField);
-    Camera pieces = Camera.fromFieldPositions(ThingType.GAME_PIECE, () -> piecesOnField);
+    Camera robots = Camera.simulated(() -> robotsOnField, () -> List.of());
+    Camera pieces = Camera.simulated(() -> List.of(), () -> piecesOnField);
     ReactivePathing.watchForRobots(robots);
     ReactivePathing.pickUpGamePieces(
         pieces,
         () -> Commands.run(() -> intakeRan = true, intake),
-        () -> drive.pose.getTranslation().getDistance(new Translation2d(4.5, 5)) < 0.3,
-        intake);
+        () -> drive.pose.getTranslation().getDistance(new Translation2d(4.5, 5)) < 0.3);
   }
 
   /** Run a command on the simulated robot. @return how long it took, in seconds */
@@ -223,10 +221,10 @@ public class SimulatedAutoTest extends WpilibTest {
   @Test
   public void withNothingInTheWayItJustDrivesThePath() throws Exception {
     useCameras();
-    double plainTime = run(ReactivePathing.followPathNormally(straightPath()), 20);
+    double plainTime = run(ReactivePathing.followPath(straightPath()), 20);
     drive.pose = new Pose2d(2, 4, Rotation2d.kZero);
 
-    List<Region> regions = List.of(robotRegion(1.5, RegionAction.CONTINUE, RegionTeam.ANY, null));
+    List<Region> regions = List.of(robotRegion(1.5, Region.Action.CONTINUE, Region.Team.ANY, null));
     double time = run(new ReactivePathCommand(straightPath(), regions), 20);
     assertEndsAt(8, 4);
     assertEquals(plainTime, time, 0.2);
@@ -237,7 +235,7 @@ public class SimulatedAutoTest extends WpilibTest {
     useCameras();
     robotsOnField.add(new Translation2d(4.2, 4.1)); // in the region, and it never moves
 
-    List<Region> regions = List.of(robotRegion(1.5, RegionAction.CONTINUE, RegionTeam.ANY, null));
+    List<Region> regions = List.of(robotRegion(1.5, Region.Action.CONTINUE, Region.Team.ANY, null));
     run(new ReactivePathCommand(straightPath(), regions), 20);
     assertEndsAt(8, 4);
     assertTrue(timeStoppedInRegion >= 1.4, "stopped " + timeStoppedInRegion + " s at the region end");
@@ -248,7 +246,7 @@ public class SimulatedAutoTest extends WpilibTest {
     useCameras();
     robotsOnField.add(new Translation2d(4.2, 4.1));
 
-    List<Region> regions = List.of(robotRegion(1.0, RegionAction.DIVERT, RegionTeam.ANY, divertPath()));
+    List<Region> regions = List.of(robotRegion(1.0, Region.Action.DIVERT, Region.Team.ANY, divertPath()));
     run(new ReactivePathCommand(straightPath(), regions), 25);
     assertEndsAt(5.5, 7);
   }
@@ -257,7 +255,7 @@ public class SimulatedAutoTest extends WpilibTest {
   public void goesOnInsteadOfDivertingIfTheRobotLeaves() throws Exception {
     useCameras();
     robotsOnField.add(new Translation2d(4.2, 4.1));
-    List<Region> regions = List.of(robotRegion(1.0, RegionAction.DIVERT, RegionTeam.ANY, divertPath()));
+    List<Region> regions = List.of(robotRegion(1.0, Region.Action.DIVERT, Region.Team.ANY, divertPath()));
     Command auto = new ReactivePathCommand(straightPath(), regions);
 
     CommandScheduler.getInstance().schedule(auto);
@@ -284,7 +282,7 @@ public class SimulatedAutoTest extends WpilibTest {
     useCameras();
     robotsOnField.add(new Translation2d(4.2, 4.1)); // field positions have no color
 
-    List<Region> regions = List.of(robotRegion(1.5, RegionAction.CONTINUE, RegionTeam.OPPONENT, null));
+    List<Region> regions = List.of(robotRegion(1.5, Region.Action.CONTINUE, Region.Team.OPPONENT, null));
     run(new ReactivePathCommand(straightPath(), regions), 20);
     assertEndsAt(8, 4);
     assertTrue(timeStoppedInRegion < 0.2, "should not have stopped");
@@ -305,17 +303,6 @@ public class SimulatedAutoTest extends WpilibTest {
   public void ignoresAGamePieceOutsideTheZone() throws Exception {
     useCameras();
     piecesOnField.add(new Translation2d(4.5, 7.5)); // far outside the zone
-
-    run(new ReactivePathCommand(straightPath(), List.of(pieceRegion(zoneAroundPiece()))), 20);
-    assertFalse(intakeRan);
-    assertEndsAt(8, 4);
-  }
-
-  @Test
-  public void switchesCanTurnPickupsOff() throws Exception {
-    useCameras();
-    ReactivePathing.setSwitches(() -> true, () -> true, () -> false);
-    piecesOnField.add(new Translation2d(4.5, 5));
 
     run(new ReactivePathCommand(straightPath(), List.of(pieceRegion(zoneAroundPiece()))), 20);
     assertFalse(intakeRan);
@@ -348,8 +335,8 @@ public class SimulatedAutoTest extends WpilibTest {
     drive.pose = new Pose2d(2, 4.07, Rotation2d.kZero);
     piecesOnField.add(new Translation2d(4.5, 5));
     Region onTheWayOut =
-        new Region(0.1, 0.9, RegionTrigger.GAME_PIECE, RegionTeam.ANY, 0, RegionAction.CONTINUE, null,
-            zoneAroundPiece(), 2.0);
+        new Region(0.1, 0.9, Region.Trigger.GAME_PIECE, Region.Team.ANY, 0, Region.Action.CONTINUE, null,
+            zoneAroundPiece());
 
     run(new ReactivePathCommand(outAndBackPath(), List.of(onTheWayOut)), 40);
     assertTrue(intakeRan, "should have picked up the piece on the way out");
@@ -368,7 +355,7 @@ public class SimulatedAutoTest extends WpilibTest {
             null,
             new GoalEndState(0, Rotation2d.kZero));
     Region atTheEnd =
-        new Region(0.8, 1.0, RegionTrigger.ROBOT, RegionTeam.ANY, 0, RegionAction.DIVERT, divert, List.of(), 2.0);
+        new Region(0.8, 1.0, Region.Trigger.ROBOT, Region.Team.ANY, 0, Region.Action.DIVERT, divert, List.of());
 
     run(new ReactivePathCommand(straightPath(), List.of(atTheEnd)), 30);
     assertEndsAt(8, 6.5);
@@ -394,12 +381,11 @@ public class SimulatedAutoTest extends WpilibTest {
   @Test
   public void anIntakeMethodThatReturnsTheSameCommandEachTimeWorks() throws Exception {
     Command sharedIntake = Commands.run(() -> intakeRan = true, intake);
-    ReactivePathing.watchForRobots(Camera.fromFieldPositions(ThingType.ROBOT, () -> robotsOnField));
+    ReactivePathing.watchForRobots(Camera.simulated(() -> robotsOnField, () -> List.of()));
     ReactivePathing.pickUpGamePieces(
-        Camera.fromFieldPositions(ThingType.GAME_PIECE, () -> piecesOnField),
+        Camera.simulated(() -> List.of(), () -> piecesOnField),
         () -> sharedIntake,
-        () -> drive.pose.getTranslation().getDistance(new Translation2d(4.5, 5)) < 0.3,
-        intake);
+        () -> drive.pose.getTranslation().getDistance(new Translation2d(4.5, 5)) < 0.3);
 
     for (int i = 0; i < 2; i++) {
       drive.pose = new Pose2d(2, 4, Rotation2d.kZero);
@@ -426,7 +412,7 @@ public class SimulatedAutoTest extends WpilibTest {
     robotsOnField.add(FlippingUtil.flipFieldPosition(new Translation2d(4.2, 4.1)));
     regionEnd = FlippingUtil.flipFieldPosition(new Translation2d(5, 4));
 
-    List<Region> regions = List.of(robotRegion(1.5, RegionAction.CONTINUE, RegionTeam.ANY, null));
+    List<Region> regions = List.of(robotRegion(1.5, Region.Action.CONTINUE, Region.Team.ANY, null));
     run(new ReactivePathCommand(straightPath(), regions), 20);
     Translation2d end = FlippingUtil.flipFieldPosition(new Translation2d(8, 4));
     assertEndsAt(end.getX(), end.getY());
@@ -438,8 +424,8 @@ public class SimulatedAutoTest extends WpilibTest {
     useCameras();
     piecesOnField.add(new Translation2d(4.5, 5));
     Region pickupThenDivert =
-        new Region(0.2, 0.6, RegionTrigger.GAME_PIECE, RegionTeam.ANY, 0, RegionAction.DIVERT,
-            divertPath(), zoneAroundPiece(), 2.0);
+        new Region(0.2, 0.6, Region.Trigger.GAME_PIECE, Region.Team.ANY, 0, Region.Action.DIVERT,
+            divertPath(), zoneAroundPiece());
 
     run(new ReactivePathCommand(straightPath(), List.of(pickupThenDivert)), 30);
     assertTrue(intakeRan);
@@ -449,12 +435,11 @@ public class SimulatedAutoTest extends WpilibTest {
   @Test
   public void mirroredRegionsMirrorTheirZonesAndDivertPaths() {
     Region region = pieceRegion(zoneAroundPiece());
-    Region withDivert = robotRegion(0, RegionAction.DIVERT, RegionTeam.ANY, divertPath());
-    List<Region> mirrored = ReactivePathing.mirrorRegions(List.of(region, withDivert));
+    Region withDivert = robotRegion(0, Region.Action.DIVERT, Region.Team.ANY, divertPath());
+    List<Region> mirrored = Region.mirror(List.of(region, withDivert));
     double fieldY = FlippingUtil.fieldSizeY;
-    assertEquals(fieldY - 4.2, mirrored.get(0).getPickupZone().get(0).getY(), 1e-9);
-    assertEquals(
-        fieldY - 7, mirrored.get(1).getDivertPath().getWaypoints().get(1).anchor().getY(), 1e-9);
+    assertEquals(fieldY - 4.2, mirrored.get(0).pickupZone.get(0).getY(), 1e-9);
+    assertEquals(fieldY - 7, mirrored.get(1).divertPath.getWaypoints().get(1).anchor().getY(), 1e-9);
   }
 
   @Test
@@ -475,9 +460,9 @@ public class SimulatedAutoTest extends WpilibTest {
   @Test
   public void aPickupNeverCancelsTheAuto() throws Exception {
     // The intake command also needs the drivetrain, and no intake subsystem was given
-    ReactivePathing.watchForRobots(Camera.fromFieldPositions(ThingType.ROBOT, () -> robotsOnField));
+    ReactivePathing.watchForRobots(Camera.simulated(() -> robotsOnField, () -> List.of()));
     ReactivePathing.pickUpGamePieces(
-        Camera.fromFieldPositions(ThingType.GAME_PIECE, () -> piecesOnField),
+        Camera.simulated(() -> List.of(), () -> piecesOnField),
         () -> Commands.run(() -> intakeRan = true, intake, drive),
         () -> drive.pose.getTranslation().getDistance(new Translation2d(4.5, 5)) < 0.3);
     piecesOnField.add(new Translation2d(4.5, 5));
@@ -485,5 +470,16 @@ public class SimulatedAutoTest extends WpilibTest {
     Command auto = new ReactivePathCommand(straightPath(), List.of(pieceRegion(zoneAroundPiece())));
     run(auto, 30);
     assertEndsAt(8, 4);
+  }
+
+  @Test
+  public void aRobotAwayFromTheRegionDoesNotCount() throws Exception {
+    useCameras();
+    robotsOnField.add(new Translation2d(4.2, 6.5)); // 2.5 m off the path, beside the region
+
+    List<Region> regions = List.of(robotRegion(1.5, Region.Action.CONTINUE, Region.Team.ANY, null));
+    run(new ReactivePathCommand(straightPath(), regions), 20);
+    assertEndsAt(8, 4);
+    assertTrue(timeStoppedInRegion < 0.5, "didn't stop, but stopped " + timeStoppedInRegion + " s");
   }
 }

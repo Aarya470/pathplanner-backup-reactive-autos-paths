@@ -19,7 +19,7 @@ import edu.wpi.first.math.geometry.Translation2d;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-public class PathCutterTest extends WpilibTest {
+public class PathToolsTest extends WpilibTest {
   /** A curvy path with 3 waypoints and one of everything */
   static PathPlannerPath curvyPath() {
     List<Waypoint> waypoints =
@@ -46,19 +46,19 @@ public class PathCutterTest extends WpilibTest {
   @Test
   public void cuttingAtZeroGivesTheSamePath() {
     PathPlannerPath path = curvyPath();
-    assertSame(path, PathCutter.restOfPath(path, 0.0));
+    assertSame(path, PathTools.restOfPath(path, 0.0));
   }
 
   @Test
   public void cuttingAtTheEndGivesNothing() {
-    assertNull(PathCutter.restOfPath(curvyPath(), 2.0));
+    assertNull(PathTools.restOfPath(curvyPath(), 2.0));
   }
 
   @Test
   public void theRestFollowsTheSameCurve() {
     PathPlannerPath path = curvyPath();
     double cut = 0.6;
-    PathPlannerPath rest = PathCutter.restOfPath(path, cut);
+    PathPlannerPath rest = PathTools.restOfPath(path, cut);
 
     // Starts at the original path's point at the cut, and ends at the same place
     Translation2d expectedStart = pointAt(path, cut);
@@ -77,7 +77,7 @@ public class PathCutterTest extends WpilibTest {
   public void markersTargetsAndZonesMoveWithTheCut() {
     // Cut at 0.6, inside the first part. The rest still has two parts: the cut point to waypoint
     // 1, then waypoint 1 to 2. So 0.6 to 1 stretches to 0 to 1, and positions after 1 stay put.
-    PathPlannerPath rest = PathCutter.restOfPath(curvyPath(), 0.6);
+    PathPlannerPath rest = PathTools.restOfPath(curvyPath(), 0.6);
 
     // "early" (0.2) is before the cut and is dropped
     List<EventMarker> markers = rest.getEventMarkers();
@@ -106,7 +106,7 @@ public class PathCutterTest extends WpilibTest {
   @Test
   public void cuttingInTheSecondPartShiftsPositionsDown() {
     // Cut at 1.25: the rest is one part, from the cut to the last waypoint
-    PathPlannerPath rest = PathCutter.restOfPath(curvyPath(), 1.25);
+    PathPlannerPath rest = PathTools.restOfPath(curvyPath(), 1.25);
     assertEquals(2, rest.getWaypoints().size());
     // "late" at 1.7 becomes (1.7 - 1.25) / (1 - 0.25) = 0.6
     assertEquals(1, rest.getEventMarkers().stream().filter(m -> m.triggerName().equals("late")).count());
@@ -121,9 +121,9 @@ public class PathCutterTest extends WpilibTest {
 
   @Test
   public void positionsInsideTheCutPartStretch() {
-    assertEquals(0.5, PathCutter.newPosition(0.8, 0.6), 1e-9); // (0.8 - 0.6) / 0.4
-    assertEquals(0.0, PathCutter.newPosition(0.6, 0.6), 1e-9);
-    assertEquals(1.25, PathCutter.newPosition(2.25, 1.0), 1e-9);
+    assertEquals(0.5, PathTools.newPosition(0.8, 0.6), 1e-9); // (0.8 - 0.6) / 0.4
+    assertEquals(0.0, PathTools.newPosition(0.6, 0.6), 1e-9);
+    assertEquals(1.25, PathTools.newPosition(2.25, 1.0), 1e-9);
   }
 
   /** The original path's point at a position, worked out from its Bezier curves */
@@ -154,22 +154,5 @@ public class PathCutterTest extends WpilibTest {
       best = Math.min(best, pointAt(path, pos).getDistance(point));
     }
     return best;
-  }
-
-  @Test
-  public void closestPointOnlyLooksAtPartOfThePath() {
-    // Out along y = 0, and back along y = 0.1
-    List<Translation2d> points =
-        List.of(
-            new Translation2d(0, 0),
-            new Translation2d(1, 0),
-            new Translation2d(1, 0.1),
-            new Translation2d(0, 0.1));
-    List<Double> positions = List.of(0.0, 1.0, 2.0, 3.0);
-    Translation2d robot = new Translation2d(0, 0.06); // closer to the way back
-
-    assertEquals(3, PathMath.closestPointIndex(points, positions, robot, 0.0, 3.0));
-    assertEquals(0, PathMath.closestPointIndex(points, positions, robot, 0.0, 0.75));
-    assertEquals(-1, PathMath.closestPointIndex(points, positions, robot, 0.1, 0.5));
   }
 }

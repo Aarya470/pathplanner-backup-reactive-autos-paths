@@ -23,7 +23,7 @@ If they help, add screenshots.
 **Versions**
  - OS: [e.g. Windows 11]
  - PathPlanner Backup Paths version (shown in the side menu): [e.g. 1.0.1]
- - Robot library versions (in `vendordeps/`): ReactiveAutonomousPathing [e.g. 2.0.0], MercuryVision [e.g. 1.0.0], PathplannerLib [e.g. 2026.1.2]
+ - Robot library versions (in `vendordeps/`): ReactiveAutonomousPathing [e.g. 2.0.0], RobotDetection [e.g. 2.0.0], PathplannerLib [e.g. 2026.1.2]
  - Is it about a backup path / game piece region, or a normal PathPlanner feature?
 
 **Anything else?**

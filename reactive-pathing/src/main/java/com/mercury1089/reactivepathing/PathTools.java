@@ -3,27 +3,25 @@ package com.mercury1089.reactivepathing;
 import com.pathplanner.lib.path.ConstraintsZone;
 import com.pathplanner.lib.path.EventMarker;
 import com.pathplanner.lib.path.PathPlannerPath;
+import com.pathplanner.lib.path.PathPoint;
 import com.pathplanner.lib.path.PointTowardsZone;
 import com.pathplanner.lib.path.RotationTarget;
 import com.pathplanner.lib.path.Waypoint;
+import com.pathplanner.lib.util.FlippingUtil;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Makes "the rest of a path" from a point partway along it. Used when the robot goes back to a
- * path after waiting or picking up a game piece.
+ * Helpers for working with paths and the field.
  *
- * <p>The rest of the path keeps everything after the cut: rotation targets, slow zones, point
- * towards zones and event markers. Their positions are moved to match the shorter path.
- *
- * <p>How the cut works: each part of a path between two waypoints is a Bezier curve, shaped by
- * four points (two anchors and two control points). De Casteljau's method splits a Bezier curve
- * at any point into two smaller Bezier curves that trace exactly the same shape. We keep the
- * second one.
+ * <p>The biggest one is {@link #restOfPath}, used when the robot goes back to a path after waiting
+ * or picking up a game piece. Each part of a path between two waypoints is a Bezier curve, shaped by
+ * four points (two anchors and two control points). De Casteljau's method splits a Bezier curve at
+ * any point into two smaller curves with exactly the same shape. We keep the second one.
  */
-public class PathCutter {
-  private PathCutter() {}
+class PathTools {
 
   /**
    * The part of the path from a position to the end.
@@ -32,7 +30,7 @@ public class PathCutter {
    * @param cutPos where to start, as a waypoint-relative position
    * @return the rest of the path, or null if there is almost nothing left
    */
-  public static PathPlannerPath restOfPath(PathPlannerPath path, double cutPos) {
+  static PathPlannerPath restOfPath(PathPlannerPath path, double cutPos) {
     List<Waypoint> waypoints = path.getWaypoints();
     int segments = waypoints.size() - 1;
     if (cutPos <= 0.0) {
@@ -152,5 +150,74 @@ public class PathCutter {
 
   private static Translation2d lerp(Translation2d a, Translation2d b, double t) {
     return a.interpolate(b, t);
+  }
+
+  /** Mirror a position to the other side of the field, the way a mirrored auto does. */
+  static Translation2d mirror(Translation2d position) {
+    return new Translation2d(position.getX(), FlippingUtil.fieldSizeY - position.getY());
+  }
+
+  /**
+   * The way a holonomic robot faces at a point on the path: the starting rotation, then each
+   * rotation target, then the end rotation, blended in between.
+   *
+   * @return the rotation, or null if the path has none
+   */
+  static Rotation2d rotationAt(PathPlannerPath path, double pos) {
+    List<Double> positions = new ArrayList<>();
+    List<Rotation2d> rotations = new ArrayList<>();
+    if (path.getIdealStartingState() != null) {
+      positions.add(0.0);
+      rotations.add(path.getIdealStartingState().rotation());
+    }
+    List<RotationTarget> targets = new ArrayList<>(path.getRotationTargets());
+    targets.sort((a, b) -> Double.compare(a.position(), b.position()));
+    for (RotationTarget target : targets) {
+      positions.add(target.position());
+      rotations.add(target.rotation());
+    }
+    List<PathPoint> points = path.getAllPathPoints();
+    if (path.getGoalEndState() != null && !points.isEmpty()) {
+      positions.add(points.get(points.size() - 1).waypointRelativePos);
+      rotations.add(path.getGoalEndState().rotation());
+    }
+
+    if (positions.isEmpty()) {
+      return null;
+    }
+    if (pos <= positions.get(0)) {
+      return rotations.get(0);
+    }
+    for (int i = 1; i < positions.size(); i++) {
+      if (pos <= positions.get(i)) {
+        double span = positions.get(i) - positions.get(i - 1);
+        double t = 1.0;
+        if (span > 1e-9) {
+          t = (pos - positions.get(i - 1)) / span;
+        }
+        return rotations.get(i - 1).interpolate(rotations.get(i), t);
+      }
+    }
+    return rotations.get(rotations.size() - 1);
+  }
+
+  /** @return true if a point is inside a polygon (the pickup zone) */
+  static boolean isInside(List<Translation2d> polygon, Translation2d point) {
+    boolean inside = false;
+    int j = polygon.size() - 1;
+    for (int i = 0; i < polygon.size(); i++) {
+      Translation2d a = polygon.get(i);
+      Translation2d b = polygon.get(j);
+      boolean crosses = (a.getY() > point.getY()) != (b.getY() > point.getY());
+      if (crosses) {
+        double slope = (b.getX() - a.getX()) / (b.getY() - a.getY());
+        double xAtY = a.getX() + slope * (point.getY() - a.getY());
+        if (point.getX() < xAtY) {
+          inside = !inside;
+        }
+      }
+      j = i;
+    }
+    return inside;
   }
 }

@@ -47,22 +47,22 @@ jobs:
           java-version: '17'
           distribution: 'zulu'
 
-      # Build Mercury Vision from its release tag, so this works even before it is on GitHub Pages
-      - name: Find the Mercury Vision version
-        id: mv
-        run: echo "version=$(sed -n "s/^def mercuryVisionVersion = '\(.*\)'/\1/p" reactive-pathing/build.gradle)" >> "$GITHUB_OUTPUT"
+      # Build Robot Detection from its release tag, so this works even before it is on GitHub Pages
+      - name: Find the Robot Detection version
+        id: rd
+        run: echo "version=$(sed -n "s/^def robotDetectionVersion = '\(.*\)'/\1/p" reactive-pathing/build.gradle)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v6
         with:
           repository: Aarya470/FRC-Robot-Vision
-          ref: v${{ steps.mv.outputs.version }}
-          path: mercury-vision-src
+          ref: v${{ steps.rd.outputs.version }}
+          path: robot-detection-src
 
-      - name: Build Mercury Vision locally
-        working-directory: ./mercury-vision-src
+      - name: Build Robot Detection locally
+        working-directory: ./robot-detection-src
         run: |
           chmod +x gradlew
-          ./gradlew publishToMavenLocal -PreleaseVersion=${{ steps.mv.outputs.version }}
+          ./gradlew publishToMavenLocal -PreleaseVersion=${{ steps.rd.outputs.version }}
 
       - name: Build and test
         working-directory: ./reactive-pathing

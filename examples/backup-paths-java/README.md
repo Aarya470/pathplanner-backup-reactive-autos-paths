@@ -3,7 +3,7 @@
 A small swerve robot (it runs in the simulator) that shows the whole setup:
 
 - **Official PathplannerLib** for paths and autos
-- **Mercury Vision** for the cameras
+- **Robot Detection** for the cameras
 - **Reactive Autonomous Pathing** to make the autos react to the regions drawn in the app
 
 The paths:
@@ -37,14 +37,14 @@ The dashboard shows:
 1. Install the vendor libraries (WPILib VS Code: **Manage Vendor Libraries → Install new libraries (online)**):
    ```
    https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json
-   https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json
+   https://aarya470.github.io/FRC-Robot-Vision/RobotDetection.json
    https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/ReactiveAutonomousPathing.json
    ```
    For PhotonVision cameras, also install PhotonLib. Its version must match PhotonVision on your coprocessor (this example uses `v2026.3.4`). For Limelights, you don't need it.
 2. Change `AutoBuilder.configure(...)` to `ReactivePathing.configure(...)`. Keep the arguments.
 3. Copy the camera fields and `configureRegions()` from `RobotContainer.java`, and call `configureRegions()` before `AutoBuilder.buildAutoChooser()`.
-4. Measure your cameras for `mountedAt(forward, left, height, tiltDown, facing)`, from the robot's center on the floor. Mercury Vision's `tools/camera_check.py` helps.
+4. Measure your cameras for `mountedAt(forward, left, height, tiltDown, facing)`, from the robot's center on the floor. Robot Detection's `tools/camera_check.py` helps.
 5. Set the class numbers your model uses: `redRobotClasses`, `blueRobotClasses` (or `robotClasses`) and `gamePieceClasses`.
-6. Put in your intake's command, beam break (or `null`) and subsystem, for example `ReactivePathing.pickUpGamePieces(pieceCamera, intake::intakeCommand, intake::hasPiece, intake)`. The subsystem matters: it is how the library tells if your auto is already running the intake, so it doesn't start it twice. Remove `intakeIsOnBack()` if your intake is on the front.
+6. Put in your intake's command and beam break (or `null`), for example `ReactivePathing.pickUpGamePieces(pieceCamera, intake::intakeCommand, intake::hasPiece)`. Remove `intakeIsOnBack()` if your intake is on the front.
 
 Using a Limelight? Change `Camera.photonVision("...")` to `Camera.limelight("limelight-name")`. Nothing else changes.

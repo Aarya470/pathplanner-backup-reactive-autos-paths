@@ -139,22 +139,22 @@ jobs:
           java-version: '17'
           distribution: 'zulu'
 
-      # Build Mercury Vision from its release tag, so this works even before it is on GitHub Pages
-      - name: Find the Mercury Vision version
-        id: mv
-        run: echo "version=$(sed -n "s/^def mercuryVisionVersion = '\(.*\)'/\1/p" reactive-pathing/build.gradle)" >> "$GITHUB_OUTPUT"
+      # Build Robot Detection from its release tag, so this works even before it is on GitHub Pages
+      - name: Find the Robot Detection version
+        id: rd
+        run: echo "version=$(sed -n "s/^def robotDetectionVersion = '\(.*\)'/\1/p" reactive-pathing/build.gradle)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v6
         with:
           repository: Aarya470/FRC-Robot-Vision
-          ref: v${{ steps.mv.outputs.version }}
-          path: mercury-vision-src
+          ref: v${{ steps.rd.outputs.version }}
+          path: robot-detection-src
 
-      - name: Build Mercury Vision locally
-        working-directory: ./mercury-vision-src
+      - name: Build Robot Detection locally
+        working-directory: ./robot-detection-src
         run: |
           chmod +x gradlew
-          ./gradlew publishToMavenLocal -PreleaseVersion=${{ steps.mv.outputs.version }}
+          ./gradlew publishToMavenLocal -PreleaseVersion=${{ steps.rd.outputs.version }}
 
       - name: Build, test and publish to a local folder
         working-directory: ./reactive-pathing
@@ -185,10 +185,10 @@ jobs:
                       "onlineUrl": "https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json"
                   },
                   {
-                      "uuid": "50204a77-2ba9-4771-92b3-6e5c6cfebc4c",
-                      "errorMessage": "Reactive Autonomous Pathing needs Mercury Vision. Install it too.",
-                      "offlineFileName": "MercuryVision.json",
-                      "onlineUrl": "https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json"
+                      "uuid": "69302fcf-8d64-4e4a-abe9-2343d663ce20",
+                      "errorMessage": "Reactive Autonomous Pathing needs Robot Detection. Install it too.",
+                      "offlineFileName": "RobotDetection.json",
+                      "onlineUrl": "https://aarya470.github.io/FRC-Robot-Vision/RobotDetection.json"
                   }
               ],
               "conflictsWith": [
@@ -285,7 +285,7 @@ jobs:
           body += "## Robot code (Java)\n\n"
           body += "Your robot code uses the official **PathplannerLib**, plus two small libraries. In WPILib VS Code, run **WPILib: Manage Vendor Libraries > Install new libraries (online)** for each:\n\n"
           body += "1. PathplannerLib: `https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json`\n"
-          body += "2. Mercury Vision (cameras): `https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json`\n"
+          body += "2. Robot Detection (cameras): `https://aarya470.github.io/FRC-Robot-Vision/RobotDetection.json`\n"
           body += "3. Reactive Autonomous Pathing (regions): `" + site + "/ReactiveAutonomousPathing.json`\n\n"
           body += "Coming from 1.x? Remove `PathplannerLib-BackupPaths.json` from `vendordeps` first. The README has the upgrade steps.\n\n"
           body += "**Example robot project:** `-ExampleRobot.zip` shows the whole setup.\n"

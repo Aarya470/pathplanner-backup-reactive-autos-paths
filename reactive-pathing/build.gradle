@@ -27,7 +27,7 @@ repositories {
 
 def wpilibVersion = '2026.2.1'
 def pathplannerVersion = '2026.1.2'
-def mercuryVisionVersion = '1.0.0'
+def robotDetectionVersion = '2.0.0'
 
 def wpilibJava = [
     "edu.wpi.first.wpilibj:wpilibj-java:$wpilibVersion",
@@ -68,13 +68,13 @@ dependencies {
     // Teams install these themselves, so they are not bundled
     wpilibJava.each { compileOnly it }
     compileOnly "com.pathplanner.lib:PathplannerLib-java:$pathplannerVersion"
-    compileOnly "io.github.aarya470:MercuryVision-java:$mercuryVisionVersion"
+    compileOnly "io.github.aarya470:RobotDetection-java:$robotDetectionVersion"
 
     wpilibJava.each { testImplementation it }
     testImplementation "edu.wpi.first.cameraserver:cameraserver-java:$wpilibVersion"
     testImplementation "edu.wpi.first.cscore:cscore-java:$wpilibVersion"
     testImplementation "com.pathplanner.lib:PathplannerLib-java:$pathplannerVersion"
-    testImplementation "io.github.aarya470:MercuryVision-java:$mercuryVisionVersion"
+    testImplementation "io.github.aarya470:RobotDetection-java:$robotDetectionVersion"
     testRuntimeOnly "org.ejml:ejml-simple:0.44.0"
     testRuntimeOnly "com.fasterxml.jackson.core:jackson-annotations:2.19.2"
     testRuntimeOnly "com.fasterxml.jackson.core:jackson-core:2.19.2"

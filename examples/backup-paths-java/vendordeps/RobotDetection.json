@@ -1,0 +1,27 @@
+{
+    "fileName": "RobotDetection.json",
+    "name": "RobotDetection",
+    "version": "2.0.0",
+    "uuid": "69302fcf-8d64-4e4a-abe9-2343d663ce20",
+    "frcYear": "2026",
+    "mavenUrls": [
+        "https://aarya470.github.io/FRC-Robot-Vision/repo"
+    ],
+    "jsonUrl": "https://aarya470.github.io/FRC-Robot-Vision/RobotDetection.json",
+    "conflictsWith": [
+        {
+            "uuid": "50204a77-2ba9-4771-92b3-6e5c6cfebc4c",
+            "errorMessage": "Robot Detection replaces Mercury Vision. Remove MercuryVision.json from vendordeps.",
+            "offlineFileName": "MercuryVision.json"
+        }
+    ],
+    "javaDependencies": [
+        {
+            "groupId": "io.github.aarya470",
+            "artifactId": "RobotDetection-java",
+            "version": "2.0.0"
+        }
+    ],
+    "jniDependencies": [],
+    "cppDependencies": []
+}
