@@ -35,12 +35,11 @@ It installs separately from regular PathPlanner, so you can keep both. Edit your
 
 ## Set up the robot code (Java)
 
-### 1. Install three libraries
+### 1. Install libraries
 
 In WPILib VS Code, run **WPILib: Manage Vendor Libraries → Install new libraries (online)** for each:
 
 ```
-https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json
 https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json
 https://aarya470.github.io/pathplanner-backup-reactive-autos-paths/ReactiveAutonomousPathing.json
 ```
