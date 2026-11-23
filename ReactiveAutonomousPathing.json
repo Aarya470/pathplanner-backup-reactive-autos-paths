@@ -1,7 +1,7 @@
 {
     "fileName": "ReactiveAutonomousPathing.json",
     "name": "ReactiveAutonomousPathing",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "uuid": "592248b3-9c0a-4ccc-adf7-10f6f0189a04",
     "frcYear": "2026",
     "mavenUrls": [
@@ -16,10 +16,10 @@
             "onlineUrl": "https://3015rangerrobotics.github.io/pathplannerlib/PathplannerLib.json"
         },
         {
-            "uuid": "50204a77-2ba9-4771-92b3-6e5c6cfebc4c",
-            "errorMessage": "Reactive Autonomous Pathing needs Mercury Vision. Install it too.",
-            "offlineFileName": "MercuryVision.json",
-            "onlineUrl": "https://aarya470.github.io/FRC-Robot-Vision/MercuryVision.json"
+            "uuid": "69302fcf-8d64-4e4a-abe9-2343d663ce20",
+            "errorMessage": "Reactive Autonomous Pathing needs Robot Detection. Install it too.",
+            "offlineFileName": "RobotDetection.json",
+            "onlineUrl": "https://aarya470.github.io/FRC-Robot-Vision/RobotDetection.json"
         }
     ],
     "conflictsWith": [
@@ -33,7 +33,7 @@
         {
             "groupId": "io.github.aarya470",
             "artifactId": "ReactiveAutonomousPathing-java",
-            "version": "2.0.0"
+            "version": "2.1.0"
         }
     ],
     "jniDependencies": [],
